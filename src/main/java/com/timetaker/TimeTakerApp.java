@@ -27,6 +27,8 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * TimeTaker - editor de markdown minimalista voltado a registro de tempo (clock-in).
@@ -185,6 +187,10 @@ public class TimeTakerApp extends JFrame {
         // CTRL+SHIFT+Z -> refaz a ultima edicao desfeita (suporta multiplos passos).
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, menuMask | InputEvent.SHIFT_DOWN_MASK),
                 "redo", this::redoEdit);
+
+        // CTRL+R -> recalcula a duracao de todos os registros CLOCK fechados.
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_R, menuMask),
+                "recalc", this::recalculateDurations);
 
         return menuBar;
     }
@@ -544,6 +550,50 @@ public class TimeTakerApp extends JFrame {
         }
     }
 
+    /** Padrao de um registro CLOCK fechado: grupo1=entrada, grupo2=saida, grupo3=duracao atual. */
+    private static final Pattern CLOSED_CLOCK =
+            Pattern.compile("CLOCK: \\[([^\\]]*)\\]--\\[([^\\]]*)\\] =>  +(\\d+:\\d{2})");
+
+    /**
+     * Recalcula a duracao de TODOS os registros CLOCK fechados (Ctrl+R) a partir dos
+     * horarios de entrada e saida, corrigindo durecoes defasadas por edicao manual.
+     * Registros em aberto (sem horario de saida) sao ignorados pelo padrao. Quando algum
+     * horario nao puder ser interpretado, o registro e mantido como esta. Persiste em disco
+     * ao final quando ha um arquivo associado.
+     */
+    private void recalculateDurations() {
+        String text = textArea.getText();
+        Matcher m = CLOSED_CLOCK.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String g1 = m.group(1);
+            String g2 = m.group(2);
+            Date entrada = parseClockInner(g1);
+            Date saida = parseClockInner(g2);
+            String replacement;
+            if (entrada != null && saida != null) {
+                // Recalcula a duracao; usa milissegundos absolutos, logo cruza dias sem problema.
+                String novaDuracao = formatDuration(saida.getTime() - entrada.getTime());
+                replacement = "CLOCK: [" + g1 + "]--[" + g2 + "] =>  " + novaDuracao;
+            } else {
+                // Horario invalido: mantem o registro exatamente como estava.
+                replacement = m.group(0);
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        String novoTexto = sb.toString();
+
+        // Preserva a posicao do cursor de forma segura apos a reconstrucao do texto.
+        int caret = textArea.getCaretPosition();
+        textArea.setText(novoTexto);
+        textArea.setCaretPosition(Math.min(caret, textArea.getDocument().getLength()));
+
+        if (currentFile != null) {
+            writeToDisk(currentFile);
+        }
+    }
+
     /**
      * Fecha o ultimo registro CLOCK em aberto (sem horario de saida), anexando o
      * horario de saida atual e a duracao decorrida, no padrao:
@@ -863,6 +913,7 @@ public class TimeTakerApp extends JFrame {
                         + "  F1             Ajuda\n"
                         + "  Ctrl+I         Entrada: insere CLOCK no final do arquivo\n"
                         + "  Ctrl+O         Saida: fecha o ultimo CLOCK com horario e duracao\n"
+                        + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Ao abrir, o app carrega automaticamente o arquivo do dia\n"
