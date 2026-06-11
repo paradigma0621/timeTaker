@@ -2,6 +2,8 @@ package com.timetaker;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.undo.UndoManager;
+import javax.swing.undo.CannotUndoException;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -49,6 +51,9 @@ public class TimeTakerApp extends JFrame {
     private final JTextArea textArea = new JTextArea();
     private File currentFile;
 
+    /** Gerencia o historico de undo (desfazer) das edicoes do textArea. */
+    private final UndoManager undoManager = new UndoManager();
+
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
     private static final int DEFAULT_HEIGHT = 700;
@@ -91,6 +96,9 @@ public class TimeTakerApp extends JFrame {
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
         textArea.setBorder(new EmptyBorder(6, 6, 6, 6));
+
+        // Registra o UndoManager para acompanhar as edicoes do documento.
+        textArea.getDocument().addUndoableEditListener(undoManager);
 
         JScrollPane scroll = new JScrollPane(textArea);
         setContentPane(scroll);
@@ -143,6 +151,10 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_O, menuMask),
                 "clockOut", this::insertClockOut);
 
+        // CTRL+Z -> desfaz a ultima edicao (suporta multiplos passos de historico).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, menuMask),
+                "undo", this::undoEdit);
+
         return menuBar;
     }
 
@@ -172,12 +184,25 @@ public class TimeTakerApp extends JFrame {
         });
     }
 
+    /** Desfaz a ultima edicao de texto; nao faz nada se nao houver historico. */
+    private void undoEdit() {
+        try {
+            if (undoManager.canUndo()) {
+                undoManager.undo();
+            }
+        } catch (CannotUndoException ex) {
+            // Sem nada para desfazer; ignora silenciosamente.
+        }
+    }
+
     // ------------------------------------------------------ Acoes de arquivo
 
     private void newFile() {
         textArea.setText("");
         currentFile = null;
         setTitle("TimeTaker - (novo arquivo)");
+        // Limpa o historico: nao faz sentido desfazer de volta ao arquivo anterior.
+        undoManager.discardAllEdits();
     }
 
     private void openFile() {
@@ -375,6 +400,8 @@ public class TimeTakerApp extends JFrame {
             textArea.setCaretPosition(textArea.getDocument().getLength());
             currentFile = file;
             setTitle("TimeTaker - " + file.getName());
+            // Limpa o historico: nao faz sentido desfazer de volta ao conteudo anterior.
+            undoManager.discardAllEdits();
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this,
                     "Erro ao abrir o arquivo:\n" + ex.getMessage(),
