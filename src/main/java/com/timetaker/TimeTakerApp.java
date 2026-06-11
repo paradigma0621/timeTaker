@@ -487,17 +487,43 @@ public class TimeTakerApp extends JFrame {
      * Insere no final do documento o registro:
      * CLOCK: [ano-mes-dia ddd hora:minuto]   (ex: CLOCK: [2021-11-16 ter 17:50])
      * Sem quebra de linha: apenas um espaco e adicionado apos o "]".
-     * Persiste em disco quando ha um arquivo associado.
+     * Se houver uma tarefa em execucao (um CLOCK em aberto), ela e fechada antes
+     * com a hora atual como horario de saida (e a duracao), e so entao a nova
+     * entrada e adicionada. Persiste em disco quando ha um arquivo associado.
      */
     private void insertClockLine() {
+        // Se ha uma tarefa em aberto, fecha-a silenciosamente com a hora atual antes
+        // de abrir a nova. Se nao houver nada para fechar, segue sem mostrar dialogo.
+        closeOpenClock(true);
+
         String clock = "CLOCK: [" + formatClockStamp(nowToMinute()) + "] ";
 
         String content = textArea.getText();
+        // Garante que o novo registro comece numa linha nova: se ja ha conteudo e o
+        // documento nao termina com quebra de linha, antepoe um '\n'. Isso vale tanto
+        // quando acabamos de fechar uma tarefa quanto quando o documento ja tinha
+        // conteudo sem newline final.
+        if (content.length() > 0 && !content.endsWith("\n")) {
+            content = content + "\n";
+        }
         textArea.setText(content + clock);
         textArea.setCaretPosition(textArea.getDocument().getLength());
 
         // Persiste automaticamente: o registro de ponto nao deve depender de um save manual.
+        // Uma unica escrita ao final cobre tanto o fechamento quanto a nova entrada.
         if (currentFile != null) {
+            writeToDisk(currentFile);
+        }
+    }
+
+    /**
+     * Fecha o ultimo registro CLOCK em aberto (Ctrl+O), com dialogos informativos.
+     * Ex.: CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28
+     * Persiste em disco quando ha um arquivo associado.
+     */
+    private void insertClockOut() {
+        // Fecha o ultimo CLOCK em aberto exibindo os dialogos informativos (silent=false).
+        if (closeOpenClock(false) && currentFile != null) {
             writeToDisk(currentFile);
         }
     }
@@ -506,46 +532,57 @@ public class TimeTakerApp extends JFrame {
      * Fecha o ultimo registro CLOCK em aberto (sem horario de saida), anexando o
      * horario de saida atual e a duracao decorrida, no padrao:
      *   CLOCK: [entrada]--[saida] =>  h:mm
-     * Ex.: CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28
-     * Persiste em disco quando ha um arquivo associado.
+     * e, logo apos, uma quebra de linha. Posiciona o cursor na nova linha.
+     * Retorna true se fechou um registro; false se nao havia tarefa em aberto/valida.
+     * Quando silent=true nao exibe dialogos (usado pelo Ctrl+I); quando silent=false
+     * mostra os dialogos informativos atuais (usado pelo Ctrl+O). Nao persiste em disco:
+     * a escrita fica a cargo de quem chama.
      */
-    private void insertClockOut() {
+    private boolean closeOpenClock(boolean silent) {
         String text = textArea.getText();
 
         int start = text.lastIndexOf("CLOCK: [");
         if (start < 0) {
-            JOptionPane.showMessageDialog(this,
-                    "Nenhum registro CLOCK encontrado para fechar.\n"
-                            + "Use Ctrl+I para registrar uma entrada.",
-                    "Saida (CLOCK)", JOptionPane.INFORMATION_MESSAGE);
-            return;
+            if (!silent) {
+                JOptionPane.showMessageDialog(this,
+                        "Nenhum registro CLOCK encontrado para fechar.\n"
+                                + "Use Ctrl+I para registrar uma entrada.",
+                        "Saida (CLOCK)", JOptionPane.INFORMATION_MESSAGE);
+            }
+            return false;
         }
 
         int openBracket = start + "CLOCK: [".length() - 1; // indice do '['
         int closeBracket = text.indexOf(']', start);
         if (closeBracket < 0) {
-            JOptionPane.showMessageDialog(this,
-                    "O ultimo registro CLOCK esta malformado (sem ']').",
-                    "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
-            return;
+            if (!silent) {
+                JOptionPane.showMessageDialog(this,
+                        "O ultimo registro CLOCK esta malformado (sem ']').",
+                        "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
+            }
+            return false;
         }
 
         // Ja existe horario de saida anexado?
         if (text.startsWith("--[", closeBracket + 1)) {
-            JOptionPane.showMessageDialog(this,
-                    "O ultimo registro ja possui horario de saida.\n"
-                            + "Registre uma nova entrada com Ctrl+I antes de fechar.",
-                    "Saida (CLOCK)", JOptionPane.INFORMATION_MESSAGE);
-            return;
+            if (!silent) {
+                JOptionPane.showMessageDialog(this,
+                        "O ultimo registro ja possui horario de saida.\n"
+                                + "Registre uma nova entrada com Ctrl+I antes de fechar.",
+                        "Saida (CLOCK)", JOptionPane.INFORMATION_MESSAGE);
+            }
+            return false;
         }
 
         String inner = text.substring(openBracket + 1, closeBracket).trim();
         Date entryTime = parseClockInner(inner);
         if (entryTime == null) {
-            JOptionPane.showMessageDialog(this,
-                    "Nao foi possivel interpretar o horario de entrada:\n" + inner,
-                    "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
-            return;
+            if (!silent) {
+                JOptionPane.showMessageDialog(this,
+                        "Nao foi possivel interpretar o horario de entrada:\n" + inner,
+                        "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
+            }
+            return false;
         }
 
         Calendar now = nowToMinute();
@@ -564,10 +601,7 @@ public class TimeTakerApp extends JFrame {
         // explicitamente em vez de usar getLength().
         int newLineStart = closeBracket + 1 + insertion.length() + 1;
         textArea.setCaretPosition(newLineStart);
-
-        if (currentFile != null) {
-            writeToDisk(currentFile);
-        }
+        return true;
     }
 
     /** Instante atual com segundos/milissegundos zerados (precisao de minuto). */
