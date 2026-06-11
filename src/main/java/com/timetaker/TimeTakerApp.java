@@ -2,6 +2,8 @@ package com.timetaker;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -49,6 +51,9 @@ public class TimeTakerApp extends JFrame {
     private final JTextArea textArea = new JTextArea();
     private File currentFile;
 
+    /** Indica se o documento tem alteracoes nao salvas (documento "sujo"). */
+    private boolean modified = false;
+
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
     private static final int DEFAULT_HEIGHT = 700;
@@ -67,7 +72,9 @@ public class TimeTakerApp extends JFrame {
     public TimeTakerApp() {
         super("TimeTaker");
 
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // Controlamos o encerramento manualmente para poder questionar sobre
+        // alteracoes nao salvas antes de fechar a janela.
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
         loadSettings(); // fonte, pasta padrao e geometria da janela
 
@@ -79,11 +86,12 @@ public class TimeTakerApp extends JFrame {
             setLocationRelativeTo(null); // centraliza na tela
         }
 
-        // Salva geometria da janela ao fechar.
+        // Ao fechar (X): questiona sobre alteracoes nao salvas; se confirmado,
+        // salva geometria da janela e encerra a aplicacao.
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                saveSettings();
+                exitApplication();
             }
         });
 
@@ -91,6 +99,24 @@ public class TimeTakerApp extends JFrame {
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
         textArea.setBorder(new EmptyBorder(6, 6, 6, 6));
+
+        // Rastreia alteracoes do documento para o controle de "documento sujo".
+        textArea.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                modified = true;
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                modified = true;
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                modified = true;
+            }
+        });
 
         JScrollPane scroll = new JScrollPane(textArea);
         setContentPane(scroll);
@@ -178,6 +204,7 @@ public class TimeTakerApp extends JFrame {
         textArea.setText("");
         currentFile = null;
         setTitle("TimeTaker - (novo arquivo)");
+        modified = false; // documento recem-criado esta limpo
     }
 
     private void openFile() {
@@ -210,6 +237,38 @@ public class TimeTakerApp extends JFrame {
             currentFile = chooser.getSelectedFile();
             writeToDisk(currentFile);
         }
+    }
+
+    // ----------------------------------------------------- Encerramento
+
+    /**
+     * Encerra a aplicacao, questionando o usuario quando ha alteracoes nao salvas.
+     * Se houver pendencias, oferece Salvar / Nao salvar / Cancelar; em caso de
+     * cancelamento (ou falha ao salvar) o fechamento e abortado.
+     */
+    private void exitApplication() {
+        if (modified) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Ha alteracoes nao salvas. Deseja salvar antes de sair?",
+                    "TimeTaker", JOptionPane.YES_NO_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+
+            if (choice == JOptionPane.YES_OPTION) {
+                // Tenta salvar pelo fluxo normal (cai em "Salvar como" se necessario).
+                saveFile();
+                // Se ainda estiver sujo, o salvamento foi cancelado ou falhou: nao fecha.
+                if (modified) {
+                    return;
+                }
+            } else if (choice != JOptionPane.NO_OPTION) {
+                // CANCEL ou dialogo fechado: aborta o encerramento.
+                return;
+            }
+        }
+
+        saveSettings();
+        dispose();
+        System.exit(0);
     }
 
     // ----------------------------------------------------- Arquivo do dia
@@ -375,6 +434,7 @@ public class TimeTakerApp extends JFrame {
             textArea.setCaretPosition(textArea.getDocument().getLength());
             currentFile = file;
             setTitle("TimeTaker - " + file.getName());
+            modified = false; // conteudo recem-carregado do disco esta limpo
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this,
                     "Erro ao abrir o arquivo:\n" + ex.getMessage(),
@@ -386,6 +446,7 @@ public class TimeTakerApp extends JFrame {
         try {
             Files.write(file.toPath(), textArea.getText().getBytes(StandardCharsets.UTF_8));
             setTitle("TimeTaker - " + file.getName());
+            modified = false; // salvo com sucesso: documento limpo
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this,
                     "Erro ao salvar o arquivo:\n" + ex.getMessage(),
