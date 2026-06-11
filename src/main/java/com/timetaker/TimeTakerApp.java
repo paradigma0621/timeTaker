@@ -492,9 +492,17 @@ public class TimeTakerApp extends JFrame {
         String diff = formatDuration(now.getTimeInMillis() - entryTime.getTime());
 
         String insertion = "--[" + exitStamp + "] =>  " + diff;
-        String updated = text.substring(0, closeBracket + 1) + insertion + text.substring(closeBracket + 1);
+        // Insere o horario de saida e, logo apos, uma quebra de linha para criar uma
+        // nova linha abaixo do registro recem-fechado. Sempre adicionamos um unico '\n'
+        // (mesmo que ja exista outra quebra adiante) para manter a logica simples e o
+        // cursor sempre numa linha nova vazia.
+        String updated = text.substring(0, closeBracket + 1) + insertion + "\n" + text.substring(closeBracket + 1);
         textArea.setText(updated);
-        textArea.setCaretPosition(textArea.getDocument().getLength());
+        // Inicio da nova linha = posicao logo apos o '\n' que acabamos de inserir.
+        // Como o registro pode nao estar no fim do documento, calculamos o indice
+        // explicitamente em vez de usar getLength().
+        int newLineStart = closeBracket + 1 + insertion.length() + 1;
+        textArea.setCaretPosition(newLineStart);
 
         if (currentFile != null) {
             writeToDisk(currentFile);
