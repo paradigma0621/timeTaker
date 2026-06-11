@@ -1,4 +1,5 @@
 out/
+target/
 *.jar
 .claude/
 .fuse_hidden*
