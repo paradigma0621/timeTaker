@@ -4,6 +4,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.undo.UndoManager;
 import javax.swing.undo.CannotUndoException;
+import javax.swing.undo.CannotRedoException;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
@@ -181,6 +182,10 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, menuMask),
                 "undo", this::undoEdit);
 
+        // CTRL+SHIFT+Z -> refaz a ultima edicao desfeita (suporta multiplos passos).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_Z, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                "redo", this::redoEdit);
+
         return menuBar;
     }
 
@@ -218,6 +223,17 @@ public class TimeTakerApp extends JFrame {
             }
         } catch (CannotUndoException ex) {
             // Sem nada para desfazer; ignora silenciosamente.
+        }
+    }
+
+    /** Refaz a ultima edicao desfeita; nao faz nada se nao houver o que refazer. */
+    private void redoEdit() {
+        try {
+            if (undoManager.canRedo()) {
+                undoManager.redo();
+            }
+        } catch (CannotRedoException ex) {
+            // Nada para refazer; ignora silenciosamente.
         }
     }
 
@@ -812,7 +828,9 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+,         Configuracoes\n"
                         + "  F1             Ajuda\n"
                         + "  Ctrl+I         Entrada: insere CLOCK no final do arquivo\n"
-                        + "  Ctrl+O         Saida: fecha o ultimo CLOCK com horario e duracao\n\n"
+                        + "  Ctrl+O         Saida: fecha o ultimo CLOCK com horario e duracao\n"
+                        + "  Ctrl+Z         Desfazer\n"
+                        + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Ao abrir, o app carrega automaticamente o arquivo do dia\n"
                         + "(yyyy-MM-dd.md) na pasta de documentos do usuario.",
                 "Ajuda", JOptionPane.INFORMATION_MESSAGE);
