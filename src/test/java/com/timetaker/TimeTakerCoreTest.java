@@ -191,6 +191,35 @@ class TimeTakerCoreTest {
                 r.text);
         // caret no inicio da linha seguinte ("anotacao abaixo").
         assertEquals(r.text.indexOf("anotacao"), r.caret);
+        assertEquals(0, r.lineStart);
+    }
+
+    @Test
+    void closeOpenClock_abertoAcimaDeFechadosDeOutroProjeto() {
+        // Com secoes de projeto, o registro em aberto pode estar acima de registros ja
+        // fechados: a varredura deve ignorar os fechados e fechar o aberto.
+        String text = "* Projeto A\n"
+                + "CLOCK: [2021-11-16 ter 09:00] tarefa A\n"
+                + "\n"
+                + "* Projeto B\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00 tarefa B\n";
+        TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 10, 0, 0));
+        assertEquals(TimeTakerCore.CloseStatus.CLOSED, r.status);
+        assertEquals("* Projeto A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00 tarefa A\n"
+                + "\n"
+                + "* Projeto B\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00 tarefa B\n", r.text);
+        assertEquals(text.indexOf("CLOCK"), r.lineStart);
+    }
+
+    @Test
+    void closeOpenClock_todosFechadosEmVariasLinhas() {
+        String text = "* A\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + "CLOCK: [2021-11-16 ter 08:00]--[2021-11-16 ter 09:00] =>  1:00\n";
+        TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 10, 0, 0));
+        assertEquals(TimeTakerCore.CloseStatus.ALREADY_CLOSED, r.status);
     }
 
     // ----------------------------------------------------- insertClockLine
@@ -223,6 +252,176 @@ class TimeTakerCoreTest {
     void insertClockLine_conteudoComNewlineFinal() {
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("anotacao\n", cal(2021, 11, 16, 9, 0, 0));
         assertEquals("anotacao\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+    }
+
+    // ----------------------------------------------------- Projetos (estilo Org-mode)
+
+    @Test
+    void isHeading_eHeadingTitle() {
+        assertTrue(TimeTakerCore.isHeading("* Projeto"));
+        assertTrue(TimeTakerCore.isHeading("** Subnivel"));
+        assertTrue(TimeTakerCore.isHeading("# Projeto"));
+        assertTrue(TimeTakerCore.isHeading("### Projeto"));
+        assertFalse(TimeTakerCore.isHeading("*sem espaco"));
+        assertFalse(TimeTakerCore.isHeading("* "));            // sem titulo
+        assertFalse(TimeTakerCore.isHeading("texto comum"));
+        assertFalse(TimeTakerCore.isHeading("CLOCK: [2021-11-16 ter 09:00] "));
+
+        assertEquals("Projeto A", TimeTakerCore.headingTitle("* Projeto A "));
+        assertEquals("Projeto B", TimeTakerCore.headingTitle("## Projeto B"));
+        assertNull(TimeTakerCore.headingTitle("nao e cabecalho"));
+    }
+
+    @Test
+    void headingLineStartFor() {
+        String text = "* A\nlinha\n* B\noutra\n";
+        assertEquals(0, TimeTakerCore.headingLineStartFor(text, 0));  // sobre o proprio cabecalho
+        assertEquals(0, TimeTakerCore.headingLineStartFor(text, 6));  // linha sob "* A"
+        assertEquals(10, TimeTakerCore.headingLineStartFor(text, 15)); // linha sob "* B"
+        assertEquals(10, TimeTakerCore.headingLineStartFor(text, 999)); // caret alem do fim: clampa
+        assertEquals(0, TimeTakerCore.headingLineStartFor(text, -5));   // caret negativo: clampa
+
+        assertEquals(-1, TimeTakerCore.headingLineStartFor("preambulo\n* A\n", 3)); // acima do 1o cabecalho
+        assertEquals(-1, TimeTakerCore.headingLineStartFor("sem projetos", 5));
+    }
+
+    @Test
+    void nextHeadingStart() {
+        String text = "* A\nx\n* B\ny";
+        assertEquals(6, TimeTakerCore.nextHeadingStart(text, 3));  // acha "* B"
+        assertEquals(text.length(), TimeTakerCore.nextHeadingStart(text, 6)); // depois de "* B" nao ha outro
+        assertEquals(3, TimeTakerCore.nextHeadingStart("x\n\n* C\n", 0)); // linha em branco nao e cabecalho; segue ate "* C"
+    }
+
+    @Test
+    void insertClockLineComCaret_semCabecalhoCaiNoLegado() {
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("anotacao", 3, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("anotacao\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+        assertEquals(e.text.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_insereNoFimDaSecaoDoCursor() {
+        String text = "* Projeto A\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + "\n"
+                + "* Projeto B\n"
+                + "notas\n";
+        // Caret sobre o titulo "* Projeto A".
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 3, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("* Projeto A\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + "CLOCK: [2021-11-16 ter 09:00] \n"
+                + "\n"
+                + "* Projeto B\n"
+                + "notas\n", e.text);
+        // Caret logo apos o espaco do novo registro.
+        assertEquals(e.text.indexOf("CLOCK: [2021-11-16 ter 09:00] ")
+                + "CLOCK: [2021-11-16 ter 09:00] ".length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_secaoVaziaInsereLogoAposTitulo() {
+        // Cabecalho no fim do documento, sem '\n' final e sem conteudo na secao.
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("* A", 1, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("* A\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+        assertEquals(e.text.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_ultimaSecaoComConteudoSemNewlineFinal() {
+        // Ultima linha da secao sem '\n' final: insere no fim do documento.
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("* A\nnotas", 6, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("* A\nnotas\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+        assertEquals(e.text.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_fechaAbertoDeOutroProjetoAcima() {
+        // Clock em aberto no projeto A (antes do cabecalho do cursor): e fechado e o
+        // indice do cabecalho de B e deslocado pelo texto inserido no fechamento.
+        String text = "* A\n"
+                + "CLOCK: [2021-11-16 ter 09:00] x\n"
+                + "\n"
+                + "* B";
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, text.length(), cal(2021, 11, 16, 10, 0, 0));
+        assertEquals("* A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00 x\n"
+                + "\n"
+                + "* B\n"
+                + "CLOCK: [2021-11-16 ter 10:00] ", e.text);
+        assertEquals(e.text.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_fechaAbertoDaPropriaSecao() {
+        // Clock em aberto na mesma secao (depois do cabecalho): fecha sem deslocar o
+        // indice do cabecalho e insere a nova entrada logo abaixo.
+        String text = "* A\n"
+                + "CLOCK: [2021-11-16 ter 09:00] tarefa\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 0, cal(2021, 11, 16, 10, 30, 0));
+        assertEquals("* A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30 tarefa\n"
+                + "CLOCK: [2021-11-16 ter 10:30] \n", e.text);
+    }
+
+    // ----------------------------------------------------- clockReport
+
+    @Test
+    void clockReport_semRegistros() {
+        assertEquals("Nenhum registro CLOCK encontrado.", TimeTakerCore.clockReport(""));
+        assertEquals("Nenhum registro CLOCK encontrado.", TimeTakerCore.clockReport("so texto\n"));
+    }
+
+    @Test
+    void clockReport_formatoDeUmProjeto() {
+        String in = "* A\nCLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00\n";
+        assertEquals("Tempo por projeto:\n\n"
+                + "  A        1:00\n"
+                + "  Total    1:00\n", TimeTakerCore.clockReport(in));
+    }
+
+    @Test
+    void clockReport_variosProjetosAbertosEFallbacks() {
+        String in = "preambulo\n"
+                // Fora de qualquer projeto; duracao gravada defasada (9:99) e ignorada:
+                // o relatorio recalcula 0:30 a partir dos horarios.
+                + "CLOCK: [2021-11-16 ter 06:00]--[2021-11-16 ter 06:30] =>  9:99\n"
+                + "* Projeto A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  0:01\n"
+                // Horarios ilegiveis: usa a duracao gravada (0:45).
+                + "CLOCK: [ruim]--[ruim] =>  0:45\n"
+                + "* Projeto B\n"
+                + "CLOCK: [2021-11-16 ter 11:00] em curso\n"
+                + "* Projeto C\n"
+                + "CLOCK: [malformado sem fechamento\n";
+        String report = TimeTakerCore.clockReport(in);
+
+        assertTrue(report.contains("(sem projeto)"));
+        assertTrue(report.contains("0:30"));            // recalculado, nao 9:99
+        assertTrue(report.contains("Projeto A"));
+        assertTrue(report.contains("1:45"));            // 1:00 recalculado + 0:45 gravado
+        assertTrue(report.contains("Projeto B"));
+        assertTrue(report.contains("(em andamento)"));  // aberto nao soma, mas e indicado
+        assertTrue(report.contains("Projeto C"));       // aparece mesmo sem registro valido
+        assertTrue(report.contains("Total"));
+        assertTrue(report.contains("2:15"));            // 0:30 + 1:45
+    }
+
+    @Test
+    void clockReport_entradaValidaSaidaIlegivelUsaDuracaoGravada() {
+        String in = "* A\nCLOCK: [2021-11-16 ter 09:00]--[ruim] =>  0:05\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(report.contains("0:05"));
+    }
+
+    @Test
+    void clockReport_projetoSemRegistrosApareceZerado() {
+        String in = "* Vazio\n* Cheio\nCLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:10] =>  0:10\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(report.contains("Vazio"));
+        assertTrue(report.contains("0:00"));
+        assertTrue(report.contains("0:10"));
     }
 
     // ----------------------------------------------------- recalculateDurations
@@ -473,9 +672,10 @@ class TimeTakerCoreTest {
         assertEquals("x", e.text);
         assertEquals(1, e.caret);
 
-        TimeTakerCore.CloseResult r = new TimeTakerCore.CloseResult(TimeTakerCore.CloseStatus.NO_CLOCK, "t", -1);
+        TimeTakerCore.CloseResult r = new TimeTakerCore.CloseResult(TimeTakerCore.CloseStatus.NO_CLOCK, "t", -1, -1);
         assertEquals("t", r.text);
         assertEquals(-1, r.caret);
+        assertEquals(-1, r.lineStart);
         assertFalse(r.closed());
     }
 }

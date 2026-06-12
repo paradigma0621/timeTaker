@@ -166,6 +166,10 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_R, menuMask),
                 "recalc", this::recalculateDurations);
 
+        // CTRL+T -> relatorio de tempo por projeto (estilo org-clock-report).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_T, menuMask),
+                "clockReport", this::showClockReport);
+
         return menuBar;
     }
 
@@ -433,17 +437,21 @@ public class TimeTakerApp extends JFrame {
 
     /**
      * Ctrl+I: se houver uma tarefa em execucao, fecha-a com a hora atual antes de abrir
-     * a nova entrada. Delega a transformacao de texto para {@link TimeTakerCore}.
+     * a nova entrada. Com o cursor sob um cabecalho de projeto ("* Nome" ou "# Nome"),
+     * a entrada e inserida no fim daquela secao (estilo Org-mode); caso contrario, no
+     * fim do arquivo. Delega a transformacao de texto para {@link TimeTakerCore}.
      */
     private void insertClockLine() {
-        TimeTakerCore.TextEdit edit =
-                TimeTakerCore.insertClockLine(textArea.getText(), TimeTakerCore.nowToMinute());
+        TimeTakerCore.TextEdit edit = TimeTakerCore.insertClockLine(
+                textArea.getText(), textArea.getCaretPosition(), TimeTakerCore.nowToMinute());
         applyEdit(edit.text, edit.caret);
     }
 
     /**
-     * Ctrl+O: fecha o ultimo CLOCK em aberto, exibindo dialogos informativos conforme a
-     * situacao retornada por {@link TimeTakerCore#closeOpenClock}.
+     * Ctrl+O: fecha o ultimo CLOCK em aberto — onde quer que esteja no documento, ja que
+     * com secoes de projeto ele pode estar acima de registros fechados de outros projetos
+     * — exibindo dialogos informativos conforme a situacao retornada por
+     * {@link TimeTakerCore#closeOpenClock}.
      */
     private void insertClockOut() {
         TimeTakerCore.CloseResult r =
@@ -457,23 +465,36 @@ public class TimeTakerApp extends JFrame {
                 return;
             case MALFORMED:
                 JOptionPane.showMessageDialog(this,
-                        "O ultimo registro CLOCK esta malformado (sem ']').",
+                        "O registro CLOCK em aberto esta malformado (sem ']').",
                         "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
                 return;
             case ALREADY_CLOSED:
                 JOptionPane.showMessageDialog(this,
-                        "O ultimo registro ja possui horario de saida.\n"
+                        "Todos os registros ja possuem horario de saida.\n"
                                 + "Registre uma nova entrada com Ctrl+I antes de fechar.",
                         "Saida (CLOCK)", JOptionPane.INFORMATION_MESSAGE);
                 return;
             case UNPARSEABLE:
                 JOptionPane.showMessageDialog(this,
-                        "Nao foi possivel interpretar o horario de entrada do ultimo registro.",
+                        "Nao foi possivel interpretar o horario de entrada do registro em aberto.",
                         "Saida (CLOCK)", JOptionPane.WARNING_MESSAGE);
                 return;
             default: // CLOSED
                 applyEdit(r.text, r.caret);
         }
+    }
+
+    /**
+     * Ctrl+T: exibe o relatorio de tempo total por projeto (estilo org-clock-report),
+     * calculado por {@link TimeTakerCore#clockReport}. Nao altera o documento.
+     */
+    private void showClockReport() {
+        JTextArea report = new JTextArea(TimeTakerCore.clockReport(textArea.getText()));
+        report.setEditable(false);
+        report.setFont(new Font(Font.MONOSPACED, Font.PLAIN, fontSize));
+        report.setBorder(new EmptyBorder(6, 6, 6, 6));
+        JOptionPane.showMessageDialog(this, new JScrollPane(report),
+                "Tempo por projeto", JOptionPane.PLAIN_MESSAGE);
     }
 
     /**
@@ -659,11 +680,17 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+Shift+S   Salvar como\n"
                         + "  Ctrl+,         Configuracoes\n"
                         + "  F1             Ajuda\n"
-                        + "  Ctrl+I         Entrada: insere CLOCK no final do arquivo\n"
-                        + "  Ctrl+O         Saida: fecha o ultimo CLOCK com horario e duracao\n"
+                        + "  Ctrl+I         Entrada: insere CLOCK no projeto do cursor\n"
+                        + "                 (ou no final do arquivo, sem projeto)\n"
+                        + "  Ctrl+O         Saida: fecha o CLOCK em aberto com horario e duracao\n"
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
+                        + "  Ctrl+T         Relatorio de tempo por projeto\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
+                        + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"
+                        + "secoes de projeto; Ctrl+I com o cursor numa secao registra a\n"
+                        + "entrada no fim daquela secao, fechando antes qualquer tarefa\n"
+                        + "em aberto (em qualquer projeto).\n\n"
                         + "Ao abrir, o app carrega automaticamente o arquivo do dia\n"
                         + "(yyyy-MM-dd.md) na pasta de documentos do usuario.",
                 "Ajuda", JOptionPane.INFORMATION_MESSAGE);

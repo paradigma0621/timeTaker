@@ -36,19 +36,58 @@ de desempenho neste caso.
   - **macOS / outros**: `~/Documents`.
   - Em todos os casos, o app cria o arquivo do dia se ele ainda nao existir.
   - O atalho de menu tambem se adapta (Ctrl no Windows/Linux, Cmd no macOS).
-- **Ctrl+I** (entrada): insere no final do arquivo o registro
+- **Ctrl+I** (entrada): insere o registro
   `CLOCK: [ano-mes-dia ddd hora:minuto]` (ex: `CLOCK: [2021-11-16 ter 17:50]`),
   **sem quebra de linha** — apenas um espaco apos o `]` — e salva automaticamente.
-- **Ctrl+O** (saida): fecha o **ultimo registro em aberto**, anexando o horario
-  de saida e a duracao decorrida no padrao
-  `CLOCK: [entrada]--[saida] =>  h:mm`. Ex.:
+  Com o cursor sob um **cabecalho de projeto** (veja abaixo), a entrada vai para o
+  fim daquela secao; caso contrario, para o final do arquivo. Se houver uma tarefa
+  em aberto (em qualquer projeto), ela e fechada antes com a hora atual.
+- **Ctrl+O** (saida): fecha o **registro em aberto** — onde quer que esteja no
+  documento — anexando o horario de saida e a duracao decorrida no padrao
+  `CLOCK: [entrada]--[saida] =>  h:mm`; a descricao digitada apos a entrada
+  permanece na mesma linha, apos a duracao. Ex.:
 
   ```
-  CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28
+  CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28 revisando PR
   ```
 
-  Se o ultimo registro ja tiver saida (ou nao houver registro), o app avisa.
+  Se todos os registros ja tiverem saida (ou nao houver registro), o app avisa.
   A duracao usa precisao de minuto e suporta intervalos de varias horas (ex.: `4:00`).
+
+## Projetos (estilo Org-mode)
+
+Inspirado no clock-in/out do Org-mode do Emacs, o arquivo pode ser organizado em
+**secoes de projeto**: qualquer linha iniciada por `*` (Org) ou `#` (markdown),
+em qualquer nivel, seguida de espaco e um titulo, abre uma secao que vai ate o
+proximo cabecalho.
+
+```
+* Projeto A
+CLOCK: [2026-06-12 sex 09:00]--[2026-06-12 sex 10:30] =>  1:30 reuniao de design
+CLOCK: [2026-06-12 sex 14:00] implementando parser
+
+* Projeto B
+CLOCK: [2026-06-12 sex 10:30]--[2026-06-12 sex 12:00] =>  1:30
+```
+
+- **Ctrl+I** com o cursor numa secao registra a entrada **no fim daquela secao**
+  (apos a ultima linha nao vazia), fechando antes qualquer tarefa em aberto —
+  como o `org-clock-in`, que para o relogio anterior ao iniciar um novo.
+- **Ctrl+O** fecha o registro em aberto mesmo que ele nao seja o ultimo `CLOCK`
+  do arquivo (ex.: registros fechados de outros projetos mais abaixo).
+- **Ctrl+T** exibe o **relatorio de tempo por projeto** (estilo
+  `org-clock-report`): soma as duracoes dos registros fechados de cada secao,
+  recalculadas a partir dos horarios; registros antes do primeiro cabecalho
+  entram em `(sem projeto)` e tarefas em aberto sao indicadas como
+  `(em andamento)`.
+
+  ```
+  Tempo por projeto:
+
+    Projeto A   1:30  (em andamento)
+    Projeto B   1:30
+    Total       3:00
+  ```
 
 ## Configuracoes
 
@@ -82,8 +121,12 @@ window.y=...
 | `Ctrl+Shift+S` | Salvar como                   |
 | `Ctrl+,`       | Configuracoes                 |
 | `F1`           | Ajuda                         |
-| `Ctrl+I`       | Entrada: insere CLOCK no fim do arquivo |
-| `Ctrl+O`       | Saida: fecha o ultimo CLOCK com horario + duracao |
+| `Ctrl+I`       | Entrada: insere CLOCK no projeto do cursor (ou no fim do arquivo) |
+| `Ctrl+O`       | Saida: fecha o CLOCK em aberto com horario + duracao |
+| `Ctrl+R`       | Recalcula as duracoes de todos os registros fechados |
+| `Ctrl+T`       | Relatorio de tempo por projeto |
+| `Ctrl+Z`       | Desfazer                      |
+| `Ctrl+Shift+Z` | Refazer                       |
 
 ## Compilar e executar
 

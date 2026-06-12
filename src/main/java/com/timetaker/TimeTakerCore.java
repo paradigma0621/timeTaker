@@ -10,7 +10,9 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -149,16 +151,21 @@ public final class TimeTakerCore {
         CLOSED           // fechado com sucesso
     }
 
-    /** Resultado de fechar um CLOCK: situacao e (quando CLOSED) o novo texto e cursor. */
+    /**
+     * Resultado de fechar um CLOCK: situacao e (quando CLOSED) o novo texto, o cursor e
+     * o inicio da linha do registro fechado ({@code lineStart}, -1 nos demais status).
+     */
     public static final class CloseResult {
         public final CloseStatus status;
         public final String text;
         public final int caret;
+        public final int lineStart;
 
-        public CloseResult(CloseStatus status, String text, int caret) {
+        public CloseResult(CloseStatus status, String text, int caret, int lineStart) {
             this.status = status;
             this.text = text;
             this.caret = caret;
+            this.lineStart = lineStart;
         }
 
         public boolean closed() {
@@ -170,54 +177,64 @@ public final class TimeTakerCore {
 
     /**
      * Fecha o ultimo registro CLOCK em aberto, anexando "--[saida] =>  h:mm" logo apos o
-     * horario de entrada. A descricao digitada apos o registro (se houver) permanece na
-     * mesma linha, reposicionada depois da duracao; a quebra de linha vai para o fim da
-     * linha. Funcao pura: nao altera nada externo. Quando o status e CLOSED, {@code text}
-     * traz o documento atualizado e {@code caret} o inicio da linha seguinte. Nos demais
-     * status, {@code text} e o original e {@code caret} = -1.
+     * horario de entrada. As linhas sao varridas de tras para frente em busca do ultimo
+     * registro NAO fechado: com secoes de projeto, o registro em aberto pode estar acima
+     * de registros ja fechados de outros projetos. A descricao digitada apos o registro
+     * (se houver) permanece na mesma linha, reposicionada depois da duracao; a quebra de
+     * linha vai para o fim da linha. Funcao pura: nao altera nada externo. Quando o
+     * status e CLOSED, {@code text} traz o documento atualizado e {@code caret} o inicio
+     * da linha seguinte. Nos demais status, {@code text} e o original e {@code caret} = -1.
      */
     public static CloseResult closeOpenClock(String text, Calendar now) {
-        int start = text.lastIndexOf(CLOCK_OPEN);
-        if (start < 0) {
-            return new CloseResult(CloseStatus.NO_CLOCK, text, -1);
-        }
+        boolean sawClock = false;
+        int lineEnd = text.length(); // fim (exclusivo) da linha corrente
+        while (true) {
+            int lineStart = text.lastIndexOf('\n', lineEnd - 1) + 1;
+            String line = text.substring(lineStart, lineEnd);
 
-        int openBracket = start + CLOCK_OPEN.length() - 1; // indice do '['
-        int closeBracket = text.indexOf(']', start);
-        if (closeBracket < 0) {
-            return new CloseResult(CloseStatus.MALFORMED, text, -1);
-        }
+            int idx = line.indexOf(CLOCK_OPEN);
+            if (idx >= 0) {
+                sawClock = true;
+                int openBracket = idx + CLOCK_OPEN.length() - 1; // indice do '[' na linha
+                int closeBracket = line.indexOf(']', openBracket);
+                if (closeBracket < 0) {
+                    return new CloseResult(CloseStatus.MALFORMED, text, -1, -1);
+                }
+                if (!line.startsWith("--[", closeBracket + 1)) {
+                    // Registro em aberto: este e o alvo.
+                    String inner = line.substring(openBracket + 1, closeBracket).trim();
+                    Date entryTime = parseClockInner(inner);
+                    if (entryTime == null) {
+                        return new CloseResult(CloseStatus.UNPARSEABLE, text, -1, -1);
+                    }
 
-        // Ja existe horario de saida anexado?
-        if (text.startsWith("--[", closeBracket + 1)) {
-            return new CloseResult(CloseStatus.ALREADY_CLOSED, text, -1);
-        }
+                    String exitStamp = formatClockStamp(now);
+                    String diff = formatDuration(now.getTimeInMillis() - entryTime.getTime());
+                    String insertion = "--[" + exitStamp + "] =>  " + diff;
 
-        String inner = text.substring(openBracket + 1, closeBracket).trim();
-        Date entryTime = parseClockInner(inner);
-        if (entryTime == null) {
-            return new CloseResult(CloseStatus.UNPARSEABLE, text, -1);
-        }
+                    // A descricao digitada apos o ']' de entrada fica na mesma linha:
+                    // e reposicionada depois da duracao, e a quebra de linha vai para
+                    // o fim da linha do registro.
+                    String description = line.substring(closeBracket + 1).trim();
+                    if (!description.isEmpty()) {
+                        description = " " + description;
+                    }
+                    String newLine = line.substring(0, closeBracket + 1) + insertion + description;
+                    String tail = lineEnd < text.length() ? text.substring(lineEnd + 1) : "";
+                    String updated = text.substring(0, lineStart) + newLine + "\n" + tail;
+                    int caret = lineStart + newLine.length() + 1; // inicio da linha seguinte
+                    return new CloseResult(CloseStatus.CLOSED, updated, caret, lineStart);
+                }
+                // Registro ja fechado: segue procurando um aberto nas linhas acima.
+            }
 
-        String exitStamp = formatClockStamp(now);
-        String diff = formatDuration(now.getTimeInMillis() - entryTime.getTime());
-        String insertion = "--[" + exitStamp + "] =>  " + diff;
-
-        // A descricao digitada apos o ']' de entrada fica na mesma linha: e reposicionada
-        // depois da duracao, e a quebra de linha vai para o fim da linha do registro.
-        int lineEnd = text.indexOf('\n', closeBracket);
-        boolean hasNewline = lineEnd >= 0;
-        if (!hasNewline) {
-            lineEnd = text.length();
+            if (lineStart == 0) {
+                break;
+            }
+            lineEnd = lineStart - 1; // pula o '\n' da linha anterior
         }
-        String description = text.substring(closeBracket + 1, lineEnd).trim();
-        if (!description.isEmpty()) {
-            description = " " + description;
-        }
-        String line = text.substring(0, closeBracket + 1) + insertion + description;
-        String updated = line + "\n" + (hasNewline ? text.substring(lineEnd + 1) : "");
-        int caret = line.length() + 1; // inicio da linha seguinte
-        return new CloseResult(CloseStatus.CLOSED, updated, caret);
+        return new CloseResult(sawClock ? CloseStatus.ALREADY_CLOSED : CloseStatus.NO_CLOCK,
+                text, -1, -1);
     }
 
     /**
@@ -236,6 +253,182 @@ public final class TimeTakerCore {
         String clock = "CLOCK: [" + formatClockStamp(now) + "] ";
         String result = content + clock;
         return new TextEdit(result, result.length());
+    }
+
+    // ----------------------------------------------------- Projetos (estilo Org-mode)
+
+    /**
+     * Cabecalho de projeto: linha iniciada por "*" (Org-mode) ou "#" (markdown), em
+     * qualquer nivel, seguidos de espaco e um titulo nao vazio. Grupo 2 = titulo.
+     */
+    static final Pattern HEADING = Pattern.compile("^(\\*+|#+)\\s+(\\S.*)$");
+
+    /** Indica se a linha e um cabecalho de projeto. */
+    public static boolean isHeading(String line) {
+        return HEADING.matcher(line).matches();
+    }
+
+    /** Titulo (sem marcadores) de uma linha de cabecalho, ou null se nao for cabecalho. */
+    public static String headingTitle(String line) {
+        Matcher m = HEADING.matcher(line);
+        return m.matches() ? m.group(2).trim() : null;
+    }
+
+    /**
+     * Inicio da linha do cabecalho de projeto que contem o caret: a linha do proprio
+     * caret ou a primeira linha de cabecalho acima dela. Retorna -1 quando o caret nao
+     * esta sob nenhum cabecalho (preambulo ou documento sem projetos).
+     */
+    public static int headingLineStartFor(String text, int caret) {
+        caret = Math.max(0, Math.min(caret, text.length()));
+        int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+        while (true) {
+            int lineEnd = text.indexOf('\n', lineStart);
+            if (lineEnd < 0) {
+                lineEnd = text.length();
+            }
+            if (isHeading(text.substring(lineStart, lineEnd))) {
+                return lineStart;
+            }
+            if (lineStart == 0) {
+                return -1;
+            }
+            lineStart = text.lastIndexOf('\n', lineStart - 2) + 1;
+        }
+    }
+
+    /**
+     * Inicio da proxima linha de cabecalho apos {@code from} (posicao dentro da linha
+     * corrente), ou {@code text.length()} se nao houver outra: o fim da secao.
+     */
+    static int nextHeadingStart(String text, int from) {
+        int pos = from;
+        while (true) {
+            int nl = text.indexOf('\n', pos);
+            if (nl < 0) {
+                return text.length();
+            }
+            int lineStart = nl + 1;
+            int lineEnd = text.indexOf('\n', lineStart);
+            int end = lineEnd < 0 ? text.length() : lineEnd;
+            if (isHeading(text.substring(lineStart, end))) {
+                return lineStart;
+            }
+            pos = lineStart;
+        }
+    }
+
+    /**
+     * Logica do Ctrl+I com contexto de projeto (estilo Org-mode): se o caret estiver sob
+     * um cabecalho de projeto ("* Nome" ou "# Nome"), o novo registro de entrada e
+     * inserido no fim daquela secao (apos a ultima linha nao vazia, antes do proximo
+     * cabecalho), e nao no fim do documento. Qualquer tarefa em aberto — em qualquer
+     * projeto — e fechada antes com {@code now}, como no clock-in do Org. Sem cabecalho,
+     * o comportamento e o legado de {@link #insertClockLine(String, Calendar)}.
+     */
+    public static TextEdit insertClockLine(String text, int caret, Calendar now) {
+        int headingStart = headingLineStartFor(text, caret);
+        if (headingStart < 0) {
+            return insertClockLine(text, now);
+        }
+
+        CloseResult close = closeOpenClock(text, now);
+        String content = text;
+        if (close.closed()) {
+            // O fechamento edita uma unica linha; se ela estiver antes do cabecalho,
+            // o deslocamento do texto precisa ser aplicado ao indice do cabecalho.
+            if (close.lineStart < headingStart) {
+                headingStart += close.text.length() - text.length();
+            }
+            content = close.text;
+        }
+
+        int headingLineEnd = content.indexOf('\n', headingStart);
+        if (headingLineEnd < 0) {
+            headingLineEnd = content.length();
+        }
+        int sectionEnd = nextHeadingStart(content, headingLineEnd);
+
+        // Ponto de insercao: fim da ultima linha nao vazia da secao (preserva as linhas
+        // em branco que separam a proxima secao); secao vazia insere logo apos o titulo.
+        int insertAt = headingLineEnd;
+        for (int i = sectionEnd - 1; i > headingLineEnd; i--) {
+            if (!Character.isWhitespace(content.charAt(i))) {
+                int nl = content.indexOf('\n', i);
+                insertAt = nl < 0 ? content.length() : nl;
+                break;
+            }
+        }
+
+        String clock = "CLOCK: [" + formatClockStamp(now) + "] ";
+        String updated = content.substring(0, insertAt) + "\n" + clock + content.substring(insertAt);
+        return new TextEdit(updated, insertAt + 1 + clock.length());
+    }
+
+    /**
+     * Relatorio de tempo por projeto (estilo org-clock-report): soma as duracoes dos
+     * registros CLOCK fechados de cada secao de projeto, recalculadas a partir dos
+     * horarios de entrada/saida (cai na duracao gravada se os horarios nao puderem ser
+     * interpretados). Registros antes do primeiro cabecalho entram em "(sem projeto)";
+     * registros em aberto nao somam tempo, mas sao indicados como "em andamento".
+     */
+    public static String clockReport(String text) {
+        // LinkedHashMap preserva a ordem de aparicao dos projetos no documento.
+        LinkedHashMap<String, long[]> totals = new LinkedHashMap<>();
+        String project = "(sem projeto)";
+
+        for (String line : text.split("\n", -1)) {
+            String title = headingTitle(line);
+            if (title != null) {
+                project = title;
+                totals.putIfAbsent(project, new long[2]); // projeto aparece mesmo sem registros
+                continue;
+            }
+
+            int idx = line.indexOf(CLOCK_OPEN);
+            if (idx < 0) {
+                continue;
+            }
+            long[] acc = totals.computeIfAbsent(project, k -> new long[2]);
+
+            Matcher m = CLOSED_CLOCK.matcher(line);
+            if (m.find()) {
+                Date entrada = parseClockInner(m.group(1));
+                Date saida = parseClockInner(m.group(2));
+                if (entrada != null && saida != null) {
+                    acc[0] += Math.max(0, saida.getTime() - entrada.getTime());
+                } else {
+                    // Horarios ilegiveis: aproveita a duracao "h:mm" ja gravada.
+                    String[] hm = m.group(3).split(":");
+                    acc[0] += (Long.parseLong(hm[0]) * 60 + Long.parseLong(hm[1])) * 60_000L;
+                }
+            } else if (line.indexOf(']', idx) >= 0) {
+                acc[1]++; // registro em aberto (com '[...]' mas sem saida)
+            }
+        }
+
+        if (totals.isEmpty()) {
+            return "Nenhum registro CLOCK encontrado.";
+        }
+
+        int nameWidth = "Total".length();
+        for (String name : totals.keySet()) {
+            nameWidth = Math.max(nameWidth, name.length());
+        }
+
+        StringBuilder sb = new StringBuilder("Tempo por projeto:\n\n");
+        long grandTotal = 0;
+        for (Map.Entry<String, long[]> e : totals.entrySet()) {
+            grandTotal += e.getValue()[0];
+            sb.append(String.format("  %-" + nameWidth + "s  %6s", e.getKey(),
+                    formatDuration(e.getValue()[0])));
+            if (e.getValue()[1] > 0) {
+                sb.append("  (em andamento)");
+            }
+            sb.append('\n');
+        }
+        sb.append(String.format("  %-" + nameWidth + "s  %6s", "Total", formatDuration(grandTotal))).append('\n');
+        return sb.toString();
     }
 
     /** Padrao de um registro CLOCK fechado: grupo1=entrada, grupo2=saida, grupo3=duracao atual. */
