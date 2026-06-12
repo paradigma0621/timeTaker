@@ -169,10 +169,12 @@ public final class TimeTakerCore {
     private static final String CLOCK_OPEN = "CLOCK: [";
 
     /**
-     * Fecha o ultimo registro CLOCK em aberto, anexando "--[saida] =>  h:mm" e uma
-     * quebra de linha. Funcao pura: nao altera nada externo. Quando o status e CLOSED,
-     * {@code text} traz o documento atualizado e {@code caret} o inicio da nova linha.
-     * Nos demais status, {@code text} e o original e {@code caret} = -1.
+     * Fecha o ultimo registro CLOCK em aberto, anexando "--[saida] =>  h:mm" logo apos o
+     * horario de entrada. A descricao digitada apos o registro (se houver) permanece na
+     * mesma linha, reposicionada depois da duracao; a quebra de linha vai para o fim da
+     * linha. Funcao pura: nao altera nada externo. Quando o status e CLOSED, {@code text}
+     * traz o documento atualizado e {@code caret} o inicio da linha seguinte. Nos demais
+     * status, {@code text} e o original e {@code caret} = -1.
      */
     public static CloseResult closeOpenClock(String text, Calendar now) {
         int start = text.lastIndexOf(CLOCK_OPEN);
@@ -201,10 +203,20 @@ public final class TimeTakerCore {
         String diff = formatDuration(now.getTimeInMillis() - entryTime.getTime());
         String insertion = "--[" + exitStamp + "] =>  " + diff;
 
-        // Insere o horario de saida e, logo apos, uma quebra de linha (nova linha abaixo
-        // do registro recem-fechado). O registro pode nao estar no fim do documento.
-        String updated = text.substring(0, closeBracket + 1) + insertion + "\n" + text.substring(closeBracket + 1);
-        int caret = closeBracket + 1 + insertion.length() + 1; // inicio da nova linha
+        // A descricao digitada apos o ']' de entrada fica na mesma linha: e reposicionada
+        // depois da duracao, e a quebra de linha vai para o fim da linha do registro.
+        int lineEnd = text.indexOf('\n', closeBracket);
+        boolean hasNewline = lineEnd >= 0;
+        if (!hasNewline) {
+            lineEnd = text.length();
+        }
+        String description = text.substring(closeBracket + 1, lineEnd).trim();
+        if (!description.isEmpty()) {
+            description = " " + description;
+        }
+        String line = text.substring(0, closeBracket + 1) + insertion + description;
+        String updated = line + "\n" + (hasNewline ? text.substring(lineEnd + 1) : "");
+        int caret = line.length() + 1; // inicio da linha seguinte
         return new CloseResult(CloseStatus.CLOSED, updated, caret);
     }
 

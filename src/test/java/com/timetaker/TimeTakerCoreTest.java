@@ -162,9 +162,35 @@ class TimeTakerCoreTest {
         TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 18, 18, 0));
         assertEquals(TimeTakerCore.CloseStatus.CLOSED, r.status);
         assertTrue(r.closed());
-        assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28\n ", r.text);
+        assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28\n", r.text);
         // caret no inicio da nova linha (logo apos o '\n' inserido).
         assertEquals('\n', r.text.charAt(r.caret - 1));
+    }
+
+    @Test
+    void closeOpenClock_descricaoPermaneceNaMesmaLinha() {
+        // A descricao digitada apos o registro de entrada nao vai para a linha de baixo:
+        // e reposicionada apos a duracao, na mesma linha.
+        String text = "CLOCK: [2021-11-16 ter 17:50] estudando java";
+        TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 18, 18, 0));
+        assertEquals(TimeTakerCore.CloseStatus.CLOSED, r.status);
+        assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28 estudando java\n", r.text);
+        assertEquals(r.text.length(), r.caret);
+    }
+
+    @Test
+    void closeOpenClock_descricaoComLinhasAbaixoPreservadas() {
+        // Registro em aberto no meio do documento: descricao fica na mesma linha e as
+        // linhas seguintes nao sao alteradas.
+        String text = "CLOCK: [2021-11-16 ter 17:50] revisando PR\nanotacao abaixo\n";
+        TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 18, 18, 0));
+        assertEquals(TimeTakerCore.CloseStatus.CLOSED, r.status);
+        assertEquals(
+                "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28 revisando PR\n"
+                        + "anotacao abaixo\n",
+                r.text);
+        // caret no inicio da linha seguinte ("anotacao abaixo").
+        assertEquals(r.text.indexOf("anotacao"), r.caret);
     }
 
     // ----------------------------------------------------- insertClockLine
@@ -180,12 +206,8 @@ class TimeTakerCoreTest {
     void insertClockLine_fechaTarefaEmAberto() {
         String text = "CLOCK: [2021-11-16 ter 09:00] ";
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, cal(2021, 11, 16, 10, 30, 0));
-        // NOTA: o registro de entrada termina com um espaco apos o "]"; ao fechar, esse
-        // espaco fica sozinho e a quebra de linha do novo registro cria uma linha " "
-        // antes da nova entrada. Comportamento herdado da feature 5 (preservado no refactor).
         assertEquals(
                 "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30\n"
-                        + " \n"
                         + "CLOCK: [2021-11-16 ter 10:30] ",
                 e.text);
     }
