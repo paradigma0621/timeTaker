@@ -85,6 +85,24 @@ class UndoControllerTest {
     }
 
     @Test
+    void suspendIgnoraEdicoesEResumeRetoma() throws Exception {
+        Document doc = new PlainDocument();
+        UndoController uc = new UndoController(doc);
+
+        // Edicoes feitas enquanto suspenso nao entram no historico.
+        uc.suspend();
+        doc.insertString(0, "oculto", null);
+        assertFalse(uc.undo()); // nada registrado durante a suspensao
+
+        // Apos resume, novas edicoes voltam a ser desfaziveis (sem registro duplicado).
+        uc.resume();
+        doc.insertString(doc.getLength(), "X", null);
+        assertTrue(uc.undo());
+        assertEquals("oculto", text(doc)); // desfez so o "X"
+        assertFalse(uc.undo());            // e nada mais
+    }
+
+    @Test
     void discardHistoryLimpaUndoERedo() throws Exception {
         Document doc = new PlainDocument();
         UndoController uc = new UndoController(doc);

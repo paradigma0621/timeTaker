@@ -353,6 +353,72 @@ public final class TimeTakerCore {
         return m.matches() ? m.group(2).trim() : null;
     }
 
+    // ----------------------------------------------------- Palavras-chave TODO/DONE
+
+    /** Tipo de palavra-chave de tarefa reconhecida no inicio do titulo de um cabecalho. */
+    public enum Keyword {
+        TODO,
+        DONE
+    }
+
+    /**
+     * Trecho (span) de texto a ser colorido: {@code start} e o offset absoluto da palavra
+     * no texto completo (contando os '\n'), {@code length} o seu comprimento e {@code kind}
+     * a palavra-chave correspondente. Imutavel; consumido pela GUI para aplicar a cor.
+     */
+    public static final class KeywordSpan {
+        public final int start;
+        public final int length;
+        public final Keyword kind;
+
+        public KeywordSpan(int start, int length, Keyword kind) {
+            this.start = start;
+            this.length = length;
+            this.kind = kind;
+        }
+    }
+
+    /**
+     * Localiza as palavras-chave TODO/DONE a colorir no estilo Org-mode: apenas quando a
+     * palavra e o PRIMEIRO token do titulo de um cabecalho (logo apos o marcador "#"/"*" e o
+     * espaco). TODO/DONE em meio a texto comum, no corpo, ou que nao sejam o primeiro token
+     * sao ignorados. Os offsets retornados sao ABSOLUTOS no {@code text} (contando os '\n'),
+     * prontos para a GUI aplicar diretamente. Funcao pura.
+     */
+    public static List<KeywordSpan> keywordSpans(String text) {
+        List<KeywordSpan> spans = new ArrayList<>();
+        int len = text.length();
+        int lineStart = 0;
+        while (lineStart <= len) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? len : nl;
+            String line = text.substring(lineStart, lineEnd);
+            Matcher m = HEADING.matcher(line);
+            if (m.matches()) {
+                int titleStart = m.start(2); // inicio do titulo (primeiro nao-espaco apos o marcador)
+                int tokenEnd = titleStart;
+                while (tokenEnd < line.length() && !Character.isWhitespace(line.charAt(tokenEnd))) {
+                    tokenEnd++;
+                }
+                String token = line.substring(titleStart, tokenEnd);
+                Keyword kind = null;
+                if (token.equals("TODO")) {
+                    kind = Keyword.TODO;
+                } else if (token.equals("DONE")) {
+                    kind = Keyword.DONE;
+                }
+                if (kind != null) {
+                    spans.add(new KeywordSpan(lineStart + titleStart, token.length(), kind));
+                }
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return spans;
+    }
+
     /**
      * Inicio da linha do cabecalho de projeto que contem o caret: a linha do proprio
      * caret ou a primeira linha de cabecalho acima dela. Retorna -1 quando o caret nao
