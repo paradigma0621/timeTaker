@@ -689,6 +689,145 @@ public final class TimeTakerCore {
         return sb.toString();
     }
 
+    // ----------------------------------------------------- Coffee (pausas de cafe)
+    //
+    // O comando "Coffee" (Ctrl+Shift+Alt+C) registra uma pausa de cafe no FINAL do
+    // documento, sob uma secao "# Coffee" criada apenas uma vez. Dentro dela, os
+    // registros sao agrupados por dia em subtopicos "## yyyy-MM-dd ddd"; cada
+    // pressionamento gera uma unica linha "- HH:mm". O primeiro registro de um dia cria
+    // o subtopico; os seguintes apenas acrescentam a linha sob ele.
+
+    /** Cabecalho (nivel 1) da secao de pausas de cafe. */
+    public static final String COFFEE_HEADING = "# Coffee";
+
+    /** Formata um instante como "yyyy-MM-dd ddd" (dia, sem hora), reusando {@link #weekdayPt(int)}. */
+    public static String formatDay(Calendar cal) {
+        String date = new SimpleDateFormat("yyyy-MM-dd").format(cal.getTime());
+        String weekday = weekdayPt(cal.get(Calendar.DAY_OF_WEEK));
+        return date + " " + weekday;
+    }
+
+    /**
+     * Inicio da linha do cabecalho "# Coffee" (titulo "Coffee", em qualquer nivel de
+     * marcadores), ou -1 se a secao ainda nao existir.
+     */
+    private static int findCoffeeHeading(String text) {
+        int lineStart = 0;
+        while (lineStart <= text.length()) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? text.length() : nl;
+            if ("Coffee".equals(headingTitle(text.substring(lineStart, lineEnd)))) {
+                return lineStart;
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return -1;
+    }
+
+    /**
+     * Inicio da proxima linha de cabecalho de NIVEL 1 (um unico marcador "#"/"*") apos
+     * {@code from}, ou {@code text.length()} se nao houver outra: o fim da secao de cafe.
+     * Subtopicos de dia ("## ...") tem nivel 2 e nao encerram a secao.
+     */
+    private static int nextTopHeadingStart(String text, int from) {
+        int pos = from;
+        while (true) {
+            int nl = text.indexOf('\n', pos);
+            if (nl < 0) {
+                return text.length();
+            }
+            int lineStart = nl + 1;
+            int lineEnd = text.indexOf('\n', lineStart);
+            int end = lineEnd < 0 ? text.length() : lineEnd;
+            Matcher m = HEADING.matcher(text.substring(lineStart, end));
+            if (m.matches() && m.group(1).length() == 1) {
+                return lineStart;
+            }
+            pos = lineStart;
+        }
+    }
+
+    /** Inicio da primeira linha cujo conteudo (apos trim) e {@code target}, em [from, to); -1 se ausente. */
+    private static int findExactLine(String text, String target, int from, int to) {
+        int lineStart = from;
+        while (lineStart < to) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? text.length() : nl;
+            if (text.substring(lineStart, lineEnd).trim().equals(target)) {
+                return lineStart;
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return -1;
+    }
+
+    /**
+     * Posicao logo apos a ultima linha NAO vazia da regiao [from, to): o fim dessa linha
+     * (antes da sua quebra de linha), de modo que uma insercao ali preserve as linhas em
+     * branco que separam a regiao seguinte. Se a regiao for so espacos, devolve {@code from}.
+     */
+    private static int lastContentLineEnd(String text, int from, int to) {
+        for (int i = to - 1; i >= from; i--) {
+            if (!Character.isWhitespace(text.charAt(i))) {
+                int nl = text.indexOf('\n', i);
+                return (nl < 0 || nl > to) ? to : nl;
+            }
+        }
+        return from;
+    }
+
+    /**
+     * Registra uma pausa de cafe para {@code now} no fim da secao "# Coffee" (criada se
+     * ausente), agrupada no subtopico do dia "## yyyy-MM-dd ddd" (criado apenas no primeiro
+     * registro do dia). Cada chamada acrescenta exatamente uma linha "- HH:mm". Funcao pura:
+     * recebe o {@code now} por parametro e devolve o texto atualizado e o cursor (logo apos
+     * a linha inserida).
+     */
+    public static TextEdit registerCoffee(String text, Calendar now) {
+        String dayLine = "## " + formatDay(now);
+        String timeLine = "- " + new SimpleDateFormat("HH:mm").format(now.getTime());
+
+        int coffeeStart = findCoffeeHeading(text);
+        if (coffeeStart < 0) {
+            // Secao ainda nao existe: cria no fim do documento (na sua propria linha).
+            String prefix = (text.isEmpty() || text.endsWith("\n")) ? "" : "\n";
+            String head = text + prefix + COFFEE_HEADING + "\n" + dayLine + "\n" + timeLine;
+            return new TextEdit(head + "\n", head.length());
+        }
+
+        int coffeeLineEnd = text.indexOf('\n', coffeeStart);
+        if (coffeeLineEnd < 0) {
+            coffeeLineEnd = text.length();
+        }
+        int sectionEnd = nextTopHeadingStart(text, coffeeLineEnd);
+
+        int dayStart = findExactLine(text, dayLine, coffeeLineEnd, sectionEnd);
+        if (dayStart >= 0) {
+            // Subtopico do dia ja existe: acrescenta a linha no fim dele.
+            int dayLineEnd = text.indexOf('\n', dayStart);
+            if (dayLineEnd < 0) {
+                dayLineEnd = text.length();
+            }
+            int subEnd = Math.min(nextHeadingStart(text, dayLineEnd), sectionEnd);
+            int insertAt = lastContentLineEnd(text, dayLineEnd, subEnd);
+            String ins = "\n" + timeLine;
+            return new TextEdit(text.substring(0, insertAt) + ins + text.substring(insertAt),
+                    insertAt + ins.length());
+        }
+
+        // Secao existe, mas e o primeiro registro do dia: cria o subtopico no fim da secao.
+        int insertAt = lastContentLineEnd(text, coffeeLineEnd, sectionEnd);
+        String ins = "\n" + dayLine + "\n" + timeLine;
+        return new TextEdit(text.substring(0, insertAt) + ins + text.substring(insertAt),
+                insertAt + ins.length());
+    }
+
     // ----------------------------------------------------- Encerramento (decisao)
 
     /** Escolha do usuario no dialogo de "salvar antes de sair". */
