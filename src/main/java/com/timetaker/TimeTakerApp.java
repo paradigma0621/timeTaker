@@ -568,9 +568,19 @@ public class TimeTakerApp extends JFrame {
         }
     }
 
-    /** Aplica um novo texto + posicao de cursor e persiste em disco quando ha arquivo. */
+    /**
+     * Aplica um novo texto + posicao de cursor e persiste em disco quando ha arquivo.
+     *
+     * Em vez de {@code textArea.setText(text)} — que internamente remove todo o conteudo e
+     * o reinsere, gerando DOIS edits separados (um Ctrl+Z isolado esvaziaria o documento) —
+     * calcula-se a menor regiao que difere entre o texto atual e o novo
+     * ({@link TimeTakerCore#computeDiff}) e aplica-se apenas essa regiao como UM unico edit
+     * desfazivel ({@link UndoController#applyCompoundEdit}). Assim, um unico Ctrl+Z reverte
+     * exatamente a acao (Ctrl+I, Ctrl+O, etc.), restaurando o texto anterior por completo.
+     */
     private void applyEdit(String text, int caret) {
-        textArea.setText(text);
+        TimeTakerCore.DiffEdit diff = TimeTakerCore.computeDiff(textArea.getText(), text);
+        undoController.applyCompoundEdit(diff.offset, diff.removeLen, diff.insertText);
         textArea.setCaretPosition(Math.min(caret, textArea.getDocument().getLength()));
         if (currentFile != null) {
             writeToDisk(currentFile);
