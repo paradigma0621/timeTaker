@@ -67,6 +67,8 @@ public class TimeTakerApp extends JFrame {
 
     /** Guarda contra reentrancia ao reposicionar o cursor para fora de linhas dobradas. */
     private boolean adjustingCaret = false;
+    /** Ultima posicao conhecida do cursor, para inferir a direcao (subindo/descendo) ao pular dobras. */
+    private int lastCaretPos = 0;
 
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
@@ -151,9 +153,10 @@ public class TimeTakerApp extends JFrame {
         });
 
         // O cursor nunca deve repousar numa linha dobrada (oculta): ao cair numa, e movido para
-        // a proxima linha visivel. Assim o SHIFT+TAB age sobre o topico que o usuario realmente
-        // ve, e nao sobre uma dobra invisivel onde o offset por acaso aterrissou.
-        textArea.addCaretListener(e -> SwingUtilities.invokeLater(this::skipFoldedCaret));
+        // a primeira linha visivel na direcao do movimento (subindo -> cabecalho da dobra;
+        // descendo -> linha apos a dobra). Assim o SHIFT+TAB age sobre o topico que o usuario
+        // ve, e a navegacao com setas atravessa a dobra como no Org.
+        textArea.addCaretListener(e -> skipFoldedCaret());
 
         JScrollPane scroll = new JScrollPane(textArea);
         setContentPane(scroll);
@@ -784,8 +787,8 @@ public class TimeTakerApp extends JFrame {
 
     /**
      * Se o cursor estiver numa linha dobrada (oculta), reposiciona-o na primeira linha visivel
-     * seguinte (ou, se nao houver, no cabecalho da dobra). Chamado a cada movimento de cursor;
-     * sem dobras ativas e um no-op barato.
+     * na direcao do movimento: subindo, no cabecalho acima da dobra; descendo, na linha apos a
+     * dobra. Chamado a cada movimento de cursor; sem dobras ativas e um no-op barato.
      */
     private void skipFoldedCaret() {
         if (adjustingCaret) {
@@ -793,19 +796,47 @@ public class TimeTakerApp extends JFrame {
         }
         StyledDocument doc = textArea.getStyledDocument();
         int pos = Math.min(textArea.getCaretPosition(), doc.getLength());
-        if (!isFolded(doc.getParagraphElement(pos))) {
+        Element par = doc.getParagraphElement(pos);
+        if (!isFolded(par)) {
+            lastCaretPos = pos;
             return;
         }
+        boolean movingUp = pos < lastCaretPos;
+        int target = nearestVisibleOffset(doc, par, movingUp);
         adjustingCaret = true;
         try {
-            textArea.setCaretPosition(firstVisibleOffset(doc, doc.getParagraphElement(pos)));
+            textArea.setCaretPosition(target);
         } finally {
             adjustingCaret = false;
         }
+        lastCaretPos = target;
     }
 
-    /** Inicio da primeira linha NAO dobrada apos {@code folded}; se nao houver, o cabecalho acima. */
-    private int firstVisibleOffset(StyledDocument doc, Element folded) {
+    /**
+     * Inicio da linha visivel mais proxima de uma regiao dobrada, na direcao preferida
+     * ({@code preferUp}); se nao houver naquele sentido, tenta o outro; se nada, o inicio.
+     */
+    private int nearestVisibleOffset(StyledDocument doc, Element folded, boolean preferUp) {
+        int up = scanVisible(doc, folded, true);
+        int down = scanVisible(doc, folded, false);
+        if (preferUp) {
+            return up >= 0 ? up : (down >= 0 ? down : 0);
+        }
+        return down >= 0 ? down : (up >= 0 ? up : 0);
+    }
+
+    /** Inicio da primeira linha NAO dobrada acima ({@code up}) ou abaixo de {@code folded}; -1 se nao houver. */
+    private int scanVisible(StyledDocument doc, Element folded, boolean up) {
+        if (up) {
+            for (int back = folded.getStartOffset() - 1; back >= 0; ) {
+                Element p = doc.getParagraphElement(back);
+                if (!isFolded(p)) {
+                    return p.getStartOffset();
+                }
+                back = p.getStartOffset() - 1;
+            }
+            return -1;
+        }
         int len = doc.getLength();
         int pos = folded.getEndOffset();
         while (pos <= len) {
@@ -819,12 +850,7 @@ public class TimeTakerApp extends JFrame {
             }
             pos = next;
         }
-        for (int back = folded.getStartOffset() - 1; back >= 0; back = doc.getParagraphElement(back).getStartOffset() - 1) {
-            if (!isFolded(doc.getParagraphElement(back))) {
-                return doc.getParagraphElement(back).getStartOffset();
-            }
-        }
-        return 0;
+        return -1;
     }
 
     /** EditorKit que instala a {@link FoldableViewFactory} capaz de colapsar paragrafos dobrados. */
