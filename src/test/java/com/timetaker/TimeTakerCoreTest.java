@@ -543,6 +543,138 @@ class TimeTakerCoreTest {
                 + "  Total    1:00\n", TimeTakerCore.clockReport(in));
     }
 
+    // ----------------------------------------------------- clockReport (hierarquia cumulativa)
+
+    /** Devolve a primeira linha do relatorio que contem {@code label}, ou null se nao houver. */
+    private static String reportLine(String report, String label) {
+        for (String l : report.split("\n")) {
+            if (l.contains(label)) {
+                return l;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void clockReport_hierarquiaSomaCumulativaEIndenta() {
+        // Pai (1:00 proprio) com subsecao Filho (0:30): o Pai deve exibir 1:30 cumulativo.
+        String in = "* Pai\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00\n"
+                + "** Filho\n"
+                + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 10:30] =>  0:30\n";
+        assertEquals("Tempo por projeto:\n\n"
+                + "  Pai        1:30\n"
+                + "    Filho    0:30\n"
+                + "  Total      1:30\n", TimeTakerCore.clockReport(in));
+    }
+
+    @Test
+    void clockReport_hierarquiaTresNiveis() {
+        // Topo (0:10) > Meio (0:20) > Folha (0:30): o cumulativo sobe a cada nivel.
+        String in = "* Topo\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:10] =>  0:10\n"
+                + "** Meio\n"
+                + "CLOCK: [2021-11-16 ter 09:10]--[2021-11-16 ter 09:30] =>  0:20\n"
+                + "*** Folha\n"
+                + "CLOCK: [2021-11-16 ter 09:30]--[2021-11-16 ter 10:00] =>  0:30\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "Topo").endsWith("1:00"));   // 0:10 + 0:20 + 0:30
+        assertTrue(reportLine(report, "Meio").endsWith("0:50"));   // 0:20 + 0:30
+        assertTrue(reportLine(report, "Folha").endsWith("0:30"));  // proprio
+        assertTrue(reportLine(report, "Total").endsWith("1:00"));
+    }
+
+    @Test
+    void clockReport_irmaosNoMesmoNivelSomamNoPai() {
+        // Pai sem tempo proprio, com dois filhos irmaos: o Pai exibe a soma dos dois.
+        String in = "* Pai\n"
+                + "** A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:20] =>  0:20\n"
+                + "** B\n"
+                + "CLOCK: [2021-11-16 ter 09:20]--[2021-11-16 ter 10:00] =>  0:40\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "Pai").endsWith("1:00"));  // 0:20 + 0:40
+        assertTrue(reportLine(report, "  A").endsWith("0:20"));  // indentada (filha)
+        assertTrue(reportLine(report, "  B").endsWith("0:40"));
+        assertTrue(reportLine(report, "Total").endsWith("1:00"));
+    }
+
+    @Test
+    void clockReport_subsecaoVoltaParaNivelMaisRaso() {
+        // Apos a subsecao S1 de P1, um novo cabecalho de nivel 1 (P2) fecha P1: P2 e raiz
+        // (nao filho de P1) e o tempo de S1 nao vaza para P2.
+        String in = "* P1\n"
+                + "** S1\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:30] =>  0:30\n"
+                + "* P2\n"
+                + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 11:00] =>  1:00\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "P1").endsWith("0:30"));   // so a subsecao S1
+        assertTrue(reportLine(report, "S1").endsWith("0:30"));
+        assertTrue(reportLine(report, "P2").endsWith("1:00"));   // proprio, sem heranca de P1
+        // P2 e raiz: aparece sem indentacao (dois espacos do gabarito + titulo).
+        assertTrue(reportLine(report, "P2").startsWith("  P2"));
+        assertTrue(reportLine(report, "Total").endsWith("1:30")); // 0:30 + 1:00
+    }
+
+    @Test
+    void clockReport_semProjetoComHierarquia() {
+        // Clock antes do primeiro cabecalho entra em "(sem projeto)" e nao herda subsecoes.
+        String in = "preambulo\n"
+                + "CLOCK: [2021-11-16 ter 08:00]--[2021-11-16 ter 08:15] =>  0:15\n"
+                + "* P\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:45] =>  0:45\n"
+                + "** Sub\n"
+                + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 10:05] =>  0:05\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "(sem projeto)").endsWith("0:15"));
+        assertTrue(reportLine(report, "  P ").endsWith("0:50")); // 0:45 + 0:05 da subsecao
+        assertTrue(reportLine(report, "Sub").endsWith("0:05"));
+        assertTrue(reportLine(report, "Total").endsWith("1:05")); // 0:15 + 0:50
+    }
+
+    @Test
+    void clockReport_clockAbertoEmSubsecaoMarcaAncestrais() {
+        // Clock em aberto numa subsecao: tanto a subsecao quanto o ancestral sao marcados
+        // "(em andamento)", mesmo o ancestral nao tendo registro aberto proprio.
+        String in = "* Pai\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:30] =>  0:30\n"
+                + "** Filho\n"
+                + "CLOCK: [2021-11-16 ter 11:00] em curso\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "Pai").contains("(em andamento)"));
+        assertTrue(reportLine(report, "Filho").contains("(em andamento)"));
+        assertTrue(reportLine(report, "Pai").contains("0:30")); // aberto nao soma tempo
+        assertTrue(reportLine(report, "Total").contains("0:30"));
+    }
+
+    @Test
+    void clockReport_paiComAbertoProprioEFilhoMantemEmAndamento() {
+        // O Pai ja tem registro ABERTO proprio (cumOpen vem de ownOpen) e ainda assim
+        // possui subsecao: ao acumular o filho, cumOpen ja esta verdadeiro no pai.
+        String in = "* Pai\n"
+                + "CLOCK: [2021-11-16 ter 09:00] em curso\n"
+                + "** Filho\n"
+                + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 10:30] =>  0:30\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "Pai").contains("(em andamento)")); // aberto proprio
+        assertTrue(reportLine(report, "Pai").contains("0:30"));            // soma do filho
+        assertFalse(reportLine(report, "Filho").contains("(em andamento)"));
+        assertTrue(reportLine(report, "Total").contains("0:30"));
+    }
+
+    @Test
+    void clockReport_doisRegistrosNoPreambuloReusamSemProjeto() {
+        // Dois clocks antes do primeiro cabecalho: o segundo reaproveita o no
+        // "(sem projeto)" ja criado (ramo semProjeto != null).
+        String in = "preambulo\n"
+                + "CLOCK: [2021-11-16 ter 08:00]--[2021-11-16 ter 08:15] =>  0:15\n"
+                + "CLOCK: [2021-11-16 ter 08:30]--[2021-11-16 ter 08:45] =>  0:15\n";
+        String report = TimeTakerCore.clockReport(in);
+        assertTrue(reportLine(report, "(sem projeto)").endsWith("0:30")); // 0:15 + 0:15
+        assertTrue(reportLine(report, "Total").endsWith("0:30"));
+    }
+
     // ----------------------------------------------------- recalculateDurations
 
     @Test
