@@ -4,9 +4,16 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.text.AbstractDocument;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.Element;
+import javax.swing.text.ParagraphView;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
+import javax.swing.text.StyledEditorKit;
+import javax.swing.text.View;
+import javax.swing.text.ViewFactory;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -19,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
 import java.util.Date;
 
 /**
@@ -50,6 +58,11 @@ public class TimeTakerApp extends JFrame {
      * nem disparar nova recoloracao.
      */
     private boolean recoloring = false;
+
+    /** Atributo de paragrafo: linha de CORPO atualmente dobrada (oculta). */
+    private static final String FOLD_BODY_KEY = "timetaker.fold.body";
+    /** Atributo de paragrafo: cabecalho cujo topico esta dobrado (recebe as reticencias). */
+    private static final String FOLD_HEAD_KEY = "timetaker.fold.head";
 
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
@@ -94,6 +107,15 @@ public class TimeTakerApp extends JFrame {
                 exitApplication();
             }
         });
+
+        // Editor com suporte a dobra (folding) de topicos: um EditorKit proprio cuja
+        // ViewFactory colapsa as linhas do corpo marcadas como dobradas. setEditorKit recria o
+        // documento, por isso vem ANTES de ligar o undo e o DocumentListener (que usam
+        // textArea.getDocument()).
+        textArea.setEditorKit(new FoldableEditorKit());
+        // Libera SHIFT+TAB da navegacao de foco para usa-lo como atalho de dobra.
+        textArea.setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS,
+                Collections.emptySet());
 
         textArea.setFont(new Font(fontName, Font.PLAIN, fontSize));
         textArea.setBorder(new EmptyBorder(6, 6, 6, 6));
@@ -217,6 +239,10 @@ public class TimeTakerApp extends JFrame {
                 "adjustTimeUp", () -> adjustTimeField(1));
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, menuMask),
                 "adjustTimeDown", () -> adjustTimeField(-1));
+
+        // SHIFT+TAB -> alterna recolher/expandir o topico sob o cursor (folding estilo Org).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK),
+                "toggleFold", this::toggleFold);
 
         return menuBar;
     }
@@ -676,6 +702,144 @@ public class TimeTakerApp extends JFrame {
         }
     }
 
+    // --------------------------------------------------------- Folding (encolher/expandir)
+
+    /**
+     * SHIFT+TAB: alterna recolher/expandir o topico sob o cursor. A dobra e puramente visual
+     * (o texto do documento nao muda), entao salvar, undo e a coloracao seguem operando sobre o
+     * conteudo inteiro. Fora de um topico com corpo dobravel, nao faz nada.
+     */
+    private void toggleFold() {
+        TimeTakerCore.FoldRegion region =
+                TimeTakerCore.foldRegionFor(textArea.getText(), textArea.getCaretPosition());
+        if (region == null) {
+            return;
+        }
+        StyledDocument doc = textArea.getStyledDocument();
+        Element bodyPar = doc.getParagraphElement(region.bodyStart);
+        boolean folded = Boolean.TRUE.equals(bodyPar.getAttributes().getAttribute(FOLD_BODY_KEY));
+        applyFold(doc, region, !folded);
+        if (!folded) {
+            // Ao recolher, leva o cursor ao cabecalho para nao ficar preso em linha oculta.
+            textArea.setCaretPosition(region.headingStart);
+        }
+        textArea.revalidate();
+        textArea.repaint();
+    }
+
+    /**
+     * Marca (ou desmarca) como dobrados os paragrafos do corpo da regiao e o seu cabecalho.
+     * Sao atributos de paragrafo lidos pela {@link FoldableParagraphView}; o undo e suspenso
+     * para que estas mutacoes de atributo nao entrem no historico de Ctrl+Z.
+     */
+    private void applyFold(StyledDocument doc, TimeTakerCore.FoldRegion region, boolean folded) {
+        undoController.suspend();
+        try {
+            SimpleAttributeSet body = new SimpleAttributeSet();
+            body.addAttribute(FOLD_BODY_KEY, folded);
+            doc.setParagraphAttributes(region.bodyStart, region.bodyEnd - region.bodyStart, body, false);
+
+            SimpleAttributeSet head = new SimpleAttributeSet();
+            head.addAttribute(FOLD_HEAD_KEY, folded);
+            doc.setParagraphAttributes(region.headingStart, 1, head, false);
+        } finally {
+            undoController.resume();
+        }
+    }
+
+    /** EditorKit que instala a {@link FoldableViewFactory} capaz de colapsar paragrafos dobrados. */
+    private static final class FoldableEditorKit extends StyledEditorKit {
+        private final ViewFactory factory = new FoldableViewFactory(super.getViewFactory());
+
+        @Override
+        public ViewFactory getViewFactory() {
+            return factory;
+        }
+    }
+
+    /** Cria {@link FoldableParagraphView} para paragrafos; delega o resto a fabrica padrao. */
+    private static final class FoldableViewFactory implements ViewFactory {
+        private final ViewFactory base;
+
+        FoldableViewFactory(ViewFactory base) {
+            this.base = base;
+        }
+
+        @Override
+        public View create(Element elem) {
+            if (AbstractDocument.ParagraphElementName.equals(elem.getName())) {
+                return new FoldableParagraphView(elem);
+            }
+            return base.create(elem);
+        }
+    }
+
+    /**
+     * ParagraphView que (a) colapsa a altura para 0 e nao se pinta quando o paragrafo e corpo
+     * dobrado (FOLD_BODY_KEY) e (b) desenha reticencias apos o titulo quando o paragrafo e o
+     * cabecalho de um topico dobrado (FOLD_HEAD_KEY).
+     */
+    private static final class FoldableParagraphView extends ParagraphView {
+        FoldableParagraphView(Element elem) {
+            super(elem);
+        }
+
+        private boolean flag(String key) {
+            return Boolean.TRUE.equals(getElement().getAttributes().getAttribute(key));
+        }
+
+        @Override
+        public float getPreferredSpan(int axis) {
+            return (axis == View.Y_AXIS && flag(FOLD_BODY_KEY)) ? 0f : super.getPreferredSpan(axis);
+        }
+
+        @Override
+        public float getMinimumSpan(int axis) {
+            return (axis == View.Y_AXIS && flag(FOLD_BODY_KEY)) ? 0f : super.getMinimumSpan(axis);
+        }
+
+        @Override
+        public float getMaximumSpan(int axis) {
+            return (axis == View.Y_AXIS && flag(FOLD_BODY_KEY)) ? 0f : super.getMaximumSpan(axis);
+        }
+
+        @Override
+        public void paint(Graphics g, Shape a) {
+            if (flag(FOLD_BODY_KEY)) {
+                return; // corpo dobrado: nao desenha nada
+            }
+            super.paint(g, a);
+            if (flag(FOLD_HEAD_KEY)) {
+                paintEllipsis(g, a);
+            }
+        }
+
+        private void paintEllipsis(Graphics g, Shape a) {
+            Rectangle r = (a instanceof Rectangle) ? (Rectangle) a : a.getBounds();
+            Component c = getContainer();
+            FontMetrics fm = g.getFontMetrics(c != null ? c.getFont() : g.getFont());
+            String head = headingText();
+            int x = r.x + fm.stringWidth(head) + fm.charWidth(' ');
+            int y = r.y + fm.getAscent();
+            Color old = g.getColor();
+            g.setColor(Color.GRAY);
+            g.drawString("…", x, y);
+            g.setColor(old);
+        }
+
+        private String headingText() {
+            Element e = getElement();
+            int start = e.getStartOffset();
+            try {
+                String s = e.getDocument().getText(start, e.getEndOffset() - start);
+                int nl = s.indexOf('\n');
+                return nl < 0 ? s : s.substring(0, nl);
+            } catch (BadLocationException ex) {
+                return "";
+            }
+        }
+    }
+
     // ----------------------------------------------------- Editar / Ajuda
 
     private void showSettings() {
@@ -849,6 +1013,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
                         + "  Ctrl+Shift+Alt+C  Registra pausa de cafe na secao \"# Coffee\"\n"
                         + "                 (agrupada por dia, no fim do documento)\n"
+                        + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"

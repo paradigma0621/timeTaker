@@ -508,6 +508,79 @@ public final class TimeTakerCore {
         }
     }
 
+    // ----------------------------------------------------- Folding (encolher/expandir topicos)
+
+    /** Nivel de um cabecalho (numero de marcadores "#"/"*"), ou 0 se a linha nao for cabecalho. */
+    public static int headingLevel(String line) {
+        Matcher m = HEADING.matcher(line);
+        return m.matches() ? m.group(1).length() : 0;
+    }
+
+    /**
+     * Regiao dobravel de um topico: o cabecalho sob o caret e a faixa do seu CORPO que a GUI
+     * pode esconder/mostrar. {@code headingStart} e o inicio da linha do cabecalho; o corpo a
+     * esconder e o intervalo de offsets [bodyStart, bodyEnd). Imutavel.
+     */
+    public static final class FoldRegion {
+        public final int headingStart;
+        public final int bodyStart;
+        public final int bodyEnd;
+
+        public FoldRegion(int headingStart, int bodyStart, int bodyEnd) {
+            this.headingStart = headingStart;
+            this.bodyStart = bodyStart;
+            this.bodyEnd = bodyEnd;
+        }
+    }
+
+    /**
+     * Calcula a regiao dobravel do topico que contem o caret: a linha de cabecalho do caret
+     * (ou o cabecalho acima dele) e o corpo ate o proximo cabecalho de nivel igual ou superior
+     * (irmao/ancestral); cabecalhos mais profundos (filhos) fazem parte do corpo. Funcao pura.
+     * Retorna {@code null} quando o caret nao esta sob cabecalho algum, quando o cabecalho e a
+     * ultima linha (sem '\n', logo sem corpo) ou quando o topico nao tem corpo a esconder.
+     */
+    public static FoldRegion foldRegionFor(String text, int caret) {
+        int headingStart = headingLineStartFor(text, caret);
+        if (headingStart < 0) {
+            return null;
+        }
+        int headingEnd = text.indexOf('\n', headingStart);
+        if (headingEnd < 0) {
+            return null; // cabecalho na ultima linha: nao ha corpo
+        }
+        int level = headingLevel(text.substring(headingStart, headingEnd));
+        int bodyStart = headingEnd + 1;
+        int bodyEnd = subtreeEnd(text, bodyStart, level);
+        if (bodyStart >= bodyEnd) {
+            return null; // topico sem corpo
+        }
+        return new FoldRegion(headingStart, bodyStart, bodyEnd);
+    }
+
+    /**
+     * Fim do subtopico iniciado em {@code from}: inicio da primeira linha de cabecalho com
+     * nivel <= {@code level} (um irmao ou ancestral), ou {@code text.length()} se nao houver.
+     * Cabecalhos de nivel maior (filhos) integram o subtopico e nao o encerram.
+     */
+    private static int subtreeEnd(String text, int from, int level) {
+        int len = text.length();
+        int lineStart = from;
+        while (lineStart < len) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? len : nl;
+            int lvl = headingLevel(text.substring(lineStart, lineEnd));
+            if (lvl > 0 && lvl <= level) {
+                return lineStart;
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return len;
+    }
+
     /**
      * Inicio da proxima linha de cabecalho apos {@code from} (posicao dentro da linha
      * corrente), ou {@code text.length()} se nao houver outra: o fim da secao.

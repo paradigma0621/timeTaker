@@ -1391,4 +1391,72 @@ class TimeTakerCoreTest {
         TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
         assertEquals("# Coffee\n## 2021-11-15 seg\n- 10:00\n## 2021-11-16 ter\n- 14:32", e.text);
     }
+
+    // ----------------------------------------------------- Folding (foldRegionFor/headingLevel)
+
+    @Test
+    void headingLevel_contaMarcadoresOuZero() {
+        assertEquals(1, TimeTakerCore.headingLevel("# x"));
+        assertEquals(2, TimeTakerCore.headingLevel("## y"));
+        assertEquals(3, TimeTakerCore.headingLevel("*** z"));
+        assertEquals(0, TimeTakerCore.headingLevel("texto comum"));
+    }
+
+    @Test
+    void foldRegionFor_corpoSimplesAteFimDoDocumento() {
+        // Corpo vai ate o fim do texto (ultima linha sem '\n'): exercita o ramo "linha de corpo"
+        // e o break por nl < 0 em subtreeEnd.
+        String text = "# A\nlinha1\nlinha2";
+        TimeTakerCore.FoldRegion r = TimeTakerCore.foldRegionFor(text, 1);
+        assertNotNull(r);
+        assertEquals(0, r.headingStart);
+        assertEquals(4, r.bodyStart);            // logo apos "# A\n"
+        assertEquals(text.length(), r.bodyEnd);  // ate o fim
+    }
+
+    @Test
+    void foldRegionFor_paraNoIrmaoDeMesmoNivel() {
+        // O corpo termina no proximo cabecalho de mesmo nivel (irmao), que tem '\n' (ramo
+        // "lineEnd = nl" de subtreeEnd e retorno por lvl <= level).
+        String text = "# A\nbody\n# B\nmore";
+        TimeTakerCore.FoldRegion r = TimeTakerCore.foldRegionFor(text, 0);
+        assertNotNull(r);
+        assertEquals(4, r.bodyStart);
+        assertEquals(text.indexOf("# B"), r.bodyEnd);
+    }
+
+    @Test
+    void foldRegionFor_incluiSubtopicoFilhoMaisProfundo() {
+        // Cabecalho filho (nivel maior) NAO encerra o subtopico; so o irmao de nivel <= encerra.
+        // Exercita o ramo "lvl > level" (filho ignorado) e o irmao final sem '\n' (lineEnd=len).
+        String text = "# A\nbody\n## Filho\nx\n# B";
+        TimeTakerCore.FoldRegion r = TimeTakerCore.foldRegionFor(text, 2);
+        assertNotNull(r);
+        assertEquals(4, r.bodyStart);
+        assertEquals(text.indexOf("# B"), r.bodyEnd); // inclui "## Filho" e "x"
+    }
+
+    @Test
+    void foldRegionFor_semCabecalhoRetornaNull() {
+        assertNull(TimeTakerCore.foldRegionFor("so texto\nmais texto", 0));
+    }
+
+    @Test
+    void foldRegionFor_cabecalhoNaUltimaLinhaSemQuebraRetornaNull() {
+        String text = "intro\n# A";
+        assertNull(TimeTakerCore.foldRegionFor(text, text.length()));
+    }
+
+    @Test
+    void foldRegionFor_topicoSemCorpoRetornaNull() {
+        // Cabecalho seguido imediatamente por irmao (sem corpo): subtreeEnd encerra na proxima
+        // linha sem '\n' (lvl <= level), e bodyStart >= bodyEnd -> null.
+        assertNull(TimeTakerCore.foldRegionFor("# A\n# B", 0));
+    }
+
+    @Test
+    void foldRegionFor_cabecalhoComQuebraFinalSemCorpoRetornaNull() {
+        // "# A\n" termina em '\n': bodyStart == len, subtreeEnd nem entra no laco (return len).
+        assertNull(TimeTakerCore.foldRegionFor("# A\n", 0));
+    }
 }
