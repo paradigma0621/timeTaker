@@ -1309,4 +1309,63 @@ class TimeTakerCoreTest {
         TimeTakerCore.TextEdit e = TimeTakerCore.adjustTimeField(text, t + 1, 1);
         assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 19:18] =>  0:28", e.text);
     }
+
+    // ----------------------------------------------------- Diff minimo (applyEdit/Ctrl+Z)
+
+    @Test
+    void commonPrefixLength_casosBasicos() {
+        assertEquals(3, TimeTakerCore.commonPrefixLength("abcdef", "abcXYZ"));
+        assertEquals(0, TimeTakerCore.commonPrefixLength("xyz", "abc")); // nada em comum
+        assertEquals(3, TimeTakerCore.commonPrefixLength("abc", "abcdef")); // prefixo = string menor
+        assertEquals(0, TimeTakerCore.commonPrefixLength("", "abc")); // string vazia
+    }
+
+    @Test
+    void commonSuffixLength_casosBasicosERespeitaMaxLen() {
+        assertEquals(3, TimeTakerCore.commonSuffixLength("XYZdef", "abcdef", 3));
+        assertEquals(0, TimeTakerCore.commonSuffixLength("abc", "xyz", 3)); // nada em comum
+        // maxLen limita o sufixo contado (evita sobrepor o prefixo ja contabilizado).
+        assertEquals(1, TimeTakerCore.commonSuffixLength("aaaa", "aaaa", 1));
+        assertEquals(0, TimeTakerCore.commonSuffixLength("", "abc", 3)); // string vazia
+    }
+
+    @Test
+    void computeDiff_insercaoPura() {
+        TimeTakerCore.DiffEdit d = TimeTakerCore.computeDiff("abc", "abcXYZ");
+        assertEquals(3, d.offset);
+        assertEquals(0, d.removeLen);
+        assertEquals("XYZ", d.insertText);
+    }
+
+    @Test
+    void computeDiff_remocaoPura() {
+        TimeTakerCore.DiffEdit d = TimeTakerCore.computeDiff("abcXYZdef", "abcdef");
+        assertEquals(3, d.offset);
+        assertEquals(3, d.removeLen);
+        assertEquals("", d.insertText);
+    }
+
+    @Test
+    void computeDiff_substituicaoNoMeio() {
+        TimeTakerCore.DiffEdit d = TimeTakerCore.computeDiff("abc DEF ghi", "abc XYZW ghi");
+        assertEquals(4, d.offset);     // apos "abc "
+        assertEquals(3, d.removeLen);  // "DEF"
+        assertEquals("XYZW", d.insertText);
+    }
+
+    @Test
+    void computeDiff_textosIguaisRetornaEdicaoVazia() {
+        TimeTakerCore.DiffEdit d = TimeTakerCore.computeDiff("abc", "abc");
+        assertEquals(3, d.offset);
+        assertEquals(0, d.removeLen);
+        assertEquals("", d.insertText);
+    }
+
+    @Test
+    void diffEditExpoeCampos() {
+        TimeTakerCore.DiffEdit d = new TimeTakerCore.DiffEdit(2, 1, "z");
+        assertEquals(2, d.offset);
+        assertEquals(1, d.removeLen);
+        assertEquals("z", d.insertText);
+    }
 }

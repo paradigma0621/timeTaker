@@ -144,6 +144,70 @@ public final class TimeTakerCore {
         }
     }
 
+    // ----------------------------------------------------- Diff minimo (Document)
+    //
+    // Ao aplicar um texto novo ao documento do editor, em vez de substituir TODO o
+    // conteudo (setText -> remove(0,len) + insert(0,texto): dois edits, e um unico
+    // Ctrl+Z deixaria o documento vazio), calcula-se a menor regiao que difere entre o
+    // texto atual e o novo. So essa regiao e remove+inserida, mantendo o historico de
+    // undo minimo e correto (uma insercao pura vira um unico insertString -> um unico
+    // Ctrl+Z a reverte).
+
+    /** Comprimento do maior prefixo comum entre {@code a} e {@code b}. */
+    public static int commonPrefixLength(String a, String b) {
+        int max = Math.min(a.length(), b.length());
+        int i = 0;
+        while (i < max && a.charAt(i) == b.charAt(i)) {
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * Comprimento do maior sufixo comum entre {@code a} e {@code b}, limitado a
+     * {@code maxLen} para nao invadir um prefixo comum ja contabilizado (evita contar
+     * o mesmo caractere duas vezes quando as strings se sobrepoem).
+     */
+    public static int commonSuffixLength(String a, String b, int maxLen) {
+        int max = Math.min(Math.min(a.length(), b.length()), maxLen);
+        int i = 0;
+        while (i < max && a.charAt(a.length() - 1 - i) == b.charAt(b.length() - 1 - i)) {
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * Edicao minima que transforma um texto em outro: substitui o trecho
+     * {@code [offset, offset + removeLen)} pelo {@code insertText}. Para uma insercao
+     * pura, {@code removeLen == 0}; para uma remocao pura, {@code insertText} e vazio.
+     */
+    public static final class DiffEdit {
+        public final int offset;
+        public final int removeLen;
+        public final String insertText;
+
+        public DiffEdit(int offset, int removeLen, String insertText) {
+            this.offset = offset;
+            this.removeLen = removeLen;
+            this.insertText = insertText;
+        }
+    }
+
+    /**
+     * Calcula a edicao minima (via prefixo e sufixo comuns) que transforma
+     * {@code oldText} em {@code newText}. Quando os textos sao iguais, retorna uma
+     * edicao vazia ({@code removeLen == 0} e {@code insertText} vazio).
+     */
+    public static DiffEdit computeDiff(String oldText, String newText) {
+        int prefix = commonPrefixLength(oldText, newText);
+        int maxSuffix = Math.min(oldText.length(), newText.length()) - prefix;
+        int suffix = commonSuffixLength(oldText, newText, maxSuffix);
+        int removeLen = oldText.length() - prefix - suffix;
+        String insertText = newText.substring(prefix, newText.length() - suffix);
+        return new DiffEdit(prefix, removeLen, insertText);
+    }
+
     /** Situacao da tentativa de fechar o ultimo CLOCK em aberto. */
     public enum CloseStatus {
         NO_CLOCK,        // nenhum "CLOCK: [" encontrado
