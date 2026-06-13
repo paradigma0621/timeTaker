@@ -89,6 +89,20 @@ CLOCK: [2026-06-12 sex 10:30]--[2026-06-12 sex 12:00] =>  1:30
     Total       3:00
   ```
 
+- **Ctrl+Shift+T** **insere** esse mesmo relatorio **dentro do documento**, na
+  posicao do cursor, com **indentacao hierarquica**: cada nivel de cabecalho
+  (`*`/`#`, `**`/`##`, ...) ganha dois espacos a mais, refletindo a arvore de
+  projetos. As duracoes ficam alinhadas a direita e cada secao mostra o seu
+  proprio tempo. A insercao e desfazivel com `Ctrl+Z`.
+
+  ```
+  Tempo por projeto:
+
+    Projeto A       1:30
+      Subprojeto    0:45  (em andamento)
+    Total           2:15
+  ```
+
 ## Configuracoes
 
 Em **Editar > Configuracoes** (`Ctrl+,`) e possivel escolher:
@@ -125,6 +139,7 @@ window.y=...
 | `Ctrl+O`       | Saida: fecha o CLOCK em aberto com horario + duracao |
 | `Ctrl+R`       | Recalcula as duracoes de todos os registros fechados |
 | `Ctrl+T`       | Relatorio de tempo por projeto |
+| `Ctrl+Shift+T` | Insere o relatorio de tempo (indentado por projeto) no cursor |
 | `Ctrl+Z`       | Desfazer                      |
 | `Ctrl+Shift+Z` | Refazer                       |
 

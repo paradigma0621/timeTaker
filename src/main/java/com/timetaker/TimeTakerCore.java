@@ -8,9 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
@@ -428,6 +430,103 @@ public final class TimeTakerCore {
             sb.append('\n');
         }
         sb.append(String.format("  %-" + nameWidth + "s  %6s", "Total", formatDuration(grandTotal))).append('\n');
+        return sb.toString();
+    }
+
+    /** Uma secao do relatorio hierarquico: nivel do cabecalho, titulo, tempo somado e abertos. */
+    private static final class ReportSection {
+        final int level;       // nivel do cabecalho (1 = topo); "(sem projeto)" usa 1
+        final String name;     // titulo da secao
+        long millis;           // tempo total somado dos registros fechados
+        int open;              // quantidade de registros em aberto
+
+        ReportSection(int level, String name) {
+            this.level = level;
+            this.name = name;
+        }
+    }
+
+    /**
+     * Relatorio de tempo HIERARQUICO, pensado para ser inserido no proprio documento (ao
+     * contrario de {@link #clockReport(String)}, que monta um texto plano para um dialogo).
+     * Cada cabecalho vira uma linha cuja INDENTACAO reflete o seu nivel (nivel 1 com a
+     * indentacao base, cada nivel mais profundo com dois espacos a mais), no estilo de uma
+     * org-clock-report aninhada. As duracoes ficam alinhadas numa mesma coluna a direita.
+     * Cada secao mostra apenas o seu proprio tempo (sem somar subsecoes). Registros antes do
+     * primeiro cabecalho entram em "(sem projeto)" (tratado como topo); registros em aberto
+     * nao somam tempo, mas marcam a secao com "(em andamento)". Funcao pura.
+     */
+    public static String clockReportIndented(String text) {
+        // Secoes na ordem de aparicao no documento; "(sem projeto)" so e criada sob demanda.
+        List<ReportSection> sections = new ArrayList<>();
+        ReportSection current = null;
+
+        for (String line : text.split("\n", -1)) {
+            Matcher h = HEADING.matcher(line);
+            if (h.matches()) {
+                current = new ReportSection(h.group(1).length(), h.group(2).trim());
+                sections.add(current);
+                continue;
+            }
+
+            int idx = line.indexOf(CLOCK_OPEN);
+            if (idx < 0) {
+                continue;
+            }
+            if (current == null) {
+                current = new ReportSection(1, "(sem projeto)");
+                sections.add(current);
+            }
+
+            Matcher m = CLOSED_CLOCK.matcher(line);
+            if (m.find()) {
+                Date entrada = parseClockInner(m.group(1));
+                Date saida = parseClockInner(m.group(2));
+                if (entrada != null && saida != null) {
+                    current.millis += Math.max(0, saida.getTime() - entrada.getTime());
+                } else {
+                    // Horarios ilegiveis: aproveita a duracao "h:mm" ja gravada.
+                    String[] hm = m.group(3).split(":");
+                    current.millis += (Long.parseLong(hm[0]) * 60 + Long.parseLong(hm[1])) * 60_000L;
+                }
+            } else if (line.indexOf(']', idx) >= 0) {
+                current.open++; // registro em aberto (com '[...]' mas sem saida)
+            }
+        }
+
+        if (sections.isEmpty()) {
+            return "Nenhum registro CLOCK encontrado.";
+        }
+
+        // Indentacao por nivel: dois espacos por nivel (nivel 1 -> 2, nivel 2 -> 4, ...). A
+        // linha "Total" usa a indentacao base (mesma de um cabecalho de nivel 1).
+        String[] indents = new String[sections.size()];
+        String totalIndent = "  ";
+        int leftWidth = totalIndent.length() + "Total".length();
+        for (int i = 0; i < sections.size(); i++) {
+            ReportSection s = sections.get(i);
+            StringBuilder ind = new StringBuilder();
+            for (int k = 0; k < s.level; k++) {
+                ind.append("  ");
+            }
+            indents[i] = ind.toString();
+            leftWidth = Math.max(leftWidth, indents[i].length() + s.name.length());
+        }
+
+        StringBuilder sb = new StringBuilder("Tempo por projeto:\n\n");
+        long grandTotal = 0;
+        for (int i = 0; i < sections.size(); i++) {
+            ReportSection s = sections.get(i);
+            grandTotal += s.millis;
+            String left = indents[i] + s.name;
+            sb.append(String.format("%-" + leftWidth + "s  %6s", left, formatDuration(s.millis)));
+            if (s.open > 0) {
+                sb.append("  (em andamento)");
+            }
+            sb.append('\n');
+        }
+        sb.append(String.format("%-" + leftWidth + "s  %6s",
+                totalIndent + "Total", formatDuration(grandTotal))).append('\n');
         return sb.toString();
     }
 

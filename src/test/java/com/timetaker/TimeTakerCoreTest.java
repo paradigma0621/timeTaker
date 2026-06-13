@@ -424,6 +424,97 @@ class TimeTakerCoreTest {
         assertTrue(report.contains("0:10"));
     }
 
+    // ----------------------------------------------------- clockReportIndented
+
+    @Test
+    void clockReportIndented_semRegistros() {
+        assertEquals("Nenhum registro CLOCK encontrado.", TimeTakerCore.clockReportIndented(""));
+        assertEquals("Nenhum registro CLOCK encontrado.", TimeTakerCore.clockReportIndented("so texto\n"));
+    }
+
+    @Test
+    void clockReportIndented_formatoDeUmProjeto() {
+        String in = "* A\nCLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00\n";
+        // Nivel 1 -> indentacao de dois espacos; coluna de duracao alinhada a direita.
+        assertEquals("Tempo por projeto:\n\n"
+                + "  A        1:00\n"
+                + "  Total    1:00\n", TimeTakerCore.clockReportIndented(in));
+    }
+
+    @Test
+    void clockReportIndented_hierarquiaIndentaPorNivel() {
+        String in = "* Projeto\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30\n"
+                + "** Subprojeto\n"
+                + "CLOCK: [2021-11-16 ter 11:00]--[2021-11-16 ter 11:45] =>  0:45\n"
+                + "*** Tarefa\n"
+                + "CLOCK: [2021-11-16 ter 12:00]--[2021-11-16 ter 12:15] =>  0:15\n";
+        String report = TimeTakerCore.clockReportIndented(in);
+        String[] lines = report.split("\n", -1);
+
+        // Indentacao crescente: nivel 1 = 2 espacos, nivel 2 = 4, nivel 3 = 6.
+        assertEquals("  Projeto", lines[2].substring(0, 9));
+        assertEquals("    Subprojeto", lines[3].substring(0, 14));
+        assertEquals("      Tarefa", lines[4].substring(0, 12));
+        assertTrue(lines[3].startsWith("    Subprojeto"));
+        assertTrue(lines[4].startsWith("      Tarefa"));
+        // Cada secao mostra seu proprio tempo (sem somar subsecoes) e o Total soma tudo.
+        assertTrue(lines[2].contains("1:30"));
+        assertTrue(lines[3].contains("0:45"));
+        assertTrue(lines[4].contains("0:15"));
+        assertTrue(report.contains("Total"));
+        assertTrue(report.contains("2:30"));            // 1:30 + 0:45 + 0:15
+    }
+
+    @Test
+    void clockReportIndented_semProjetoEEmAndamento() {
+        String in = "preambulo\n"
+                + "CLOCK: [2021-11-16 ter 06:00]--[2021-11-16 ter 06:30] =>  0:30\n"
+                + "* Projeto B\n"
+                + "CLOCK: [2021-11-16 ter 11:00] em curso\n";
+        String report = TimeTakerCore.clockReportIndented(in);
+
+        assertTrue(report.contains("(sem projeto)"));   // registros antes do 1o cabecalho
+        assertTrue(report.contains("0:30"));
+        assertTrue(report.contains("Projeto B"));
+        assertTrue(report.contains("(em andamento)"));  // aberto nao soma, mas e indicado
+        assertTrue(report.startsWith("Tempo por projeto:\n\n"));
+        assertTrue(report.endsWith("\n"));
+        // "(sem projeto)" e tratado como topo: dois espacos de indentacao.
+        String semProjeto = report.split("\n", -1)[2];
+        assertTrue(semProjeto.startsWith("  (sem projeto)"));
+    }
+
+    @Test
+    void clockReportIndented_duracaoIlegivelUsaGravadaEAlinhaTotal() {
+        String in = "* A\nCLOCK: [ruim]--[ruim] =>  0:45\n";
+        String report = TimeTakerCore.clockReportIndented(in);
+        assertTrue(report.contains("0:45"));
+        // Coluna de duracao alinhada: a posicao do "0:45" do projeto e do Total coincide.
+        String[] lines = report.split("\n", -1);
+        assertEquals(lines[2].indexOf("0:45"), lines[3].indexOf("0:45"));
+    }
+
+    @Test
+    void clockReportIndented_entradaValidaSaidaIlegivelUsaDuracaoGravada() {
+        // Entrada interpretavel mas saida ilegivel: cai no fallback da duracao gravada "h:mm".
+        String in = "* A\nCLOCK: [2021-11-16 ter 09:00]--[ruim] =>  0:05\n";
+        String report = TimeTakerCore.clockReportIndented(in);
+        assertTrue(report.contains("0:05"));
+        assertTrue(report.contains("Total"));
+    }
+
+    @Test
+    void clockReportIndented_clockSemFechamentoNaoContaComoAberto() {
+        // Linha com "CLOCK: [" mas sem o ']' de fechamento: nao soma nem marca "(em andamento)".
+        String in = "* A\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:30] =>  0:30\n"
+                + "CLOCK: [malformado sem fechamento\n";
+        String report = TimeTakerCore.clockReportIndented(in);
+        assertTrue(report.contains("0:30"));
+        assertFalse(report.contains("(em andamento)"));
+    }
+
     // ----------------------------------------------------- recalculateDurations
 
     @Test
