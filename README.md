@@ -159,6 +159,7 @@ font.name=...
 font.size=...
 default.dir=...
 last.file=...
+show.hidden=false
 window.width=1000
 window.height=700
 window.x=...
@@ -167,6 +168,11 @@ window.y=...
 
 O `last.file` guarda o **caminho completo do ultimo arquivo aberto**, recarregado
 no proximo inicio (veja "Funcionalidades").
+
+Os dialogos de **Abrir** e **Salvar como** trazem um checkbox
+**"Mostrar arquivos/pastas ocultos"**: ao marca-lo, arquivos e pastas ocultos
+passam a aparecer na navegacao. A escolha e lembrada em `show.hidden`, valendo
+para os proximos dialogos e sessoes.
 
 ## Atalhos de teclado
 

@@ -1187,10 +1187,11 @@ public final class TimeTakerCore {
         public int winX;
         public int winY;
         public String lastFile; // caminho absoluto do ultimo arquivo aberto (pode ser null)
+        public boolean showHidden; // mostrar arquivos/pastas ocultos nos dialogos de arquivo
 
         public Settings(String fontName, int fontSize, String defaultDir,
                         int winWidth, int winHeight, int winX, int winY,
-                        String lastFile) {
+                        String lastFile, boolean showHidden) {
             this.fontName = fontName;
             this.fontSize = fontSize;
             this.defaultDir = defaultDir;
@@ -1199,6 +1200,7 @@ public final class TimeTakerCore {
             this.winX = winX;
             this.winY = winY;
             this.lastFile = lastFile;
+            this.showHidden = showHidden;
         }
     }
 
@@ -1241,6 +1243,8 @@ public final class TimeTakerCore {
         defaults.winX = parseIntOr(p.getProperty("window.x"), defaults.winX);
         defaults.winY = parseIntOr(p.getProperty("window.y"), defaults.winY);
         defaults.lastFile = p.getProperty("last.file", defaults.lastFile);
+        defaults.showHidden = Boolean.parseBoolean(
+                p.getProperty("show.hidden", String.valueOf(defaults.showHidden)));
         return defaults;
     }
 
@@ -1257,6 +1261,7 @@ public final class TimeTakerCore {
         if (s.lastFile != null) {
             p.setProperty("last.file", s.lastFile);
         }
+        p.setProperty("show.hidden", String.valueOf(s.showHidden));
         try (OutputStream out = Files.newOutputStream(cfg.toPath())) {
             p.store(out, "Configuracoes do TimeTaker");
         }

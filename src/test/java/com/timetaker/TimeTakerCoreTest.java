@@ -974,7 +974,7 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- Settings load/save
 
     private static TimeTakerCore.Settings defaults(String dir) {
-        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null);
+        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false);
     }
 
     @Test
@@ -1057,7 +1057,7 @@ class TimeTakerCoreTest {
         Files.createDirectory(docs);
         File cfg = tmp.resolve("out.properties").toFile();
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
-                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null);
+                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true);
         TimeTakerCore.saveSettings(cfg, s);
         assertTrue(cfg.isFile());
 
@@ -1069,6 +1069,27 @@ class TimeTakerCoreTest {
         assertEquals(876, r.winHeight);
         assertEquals(5, r.winX);
         assertEquals(6, r.winY);
+        assertTrue(r.showHidden);
+    }
+
+    @Test
+    void saveELoad_fazemRoundTripDoShowHidden(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        TimeTakerCore.Settings s = defaults(tmp.toString());
+        s.showHidden = true;
+        TimeTakerCore.saveSettings(cfg, s);
+
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertTrue(r.showHidden);
+    }
+
+    @Test
+    void loadSettings_semChaveShowHiddenMantemDefault(@TempDir Path tmp) throws Exception {
+        // Ausencia de show.hidden mantem o default (false aqui), sem quebrar o load.
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "font.size=20\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertFalse(r.showHidden);
     }
 
     @Test

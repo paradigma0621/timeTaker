@@ -82,6 +82,9 @@ public class TimeTakerApp extends JFrame {
     // Caminho absoluto do ultimo arquivo aberto (persistido em last.file).
     private String lastFile;
 
+    // Mostrar arquivos/pastas ocultos nos dialogos de Abrir / Salvar como (persistido).
+    private boolean showHidden;
+
     public TimeTakerApp() {
         super("TimeTaker");
 
@@ -295,7 +298,7 @@ public class TimeTakerApp extends JFrame {
     }
 
     private void openFile() {
-        JFileChooser chooser = new JFileChooser();
+        JFileChooser chooser = newChooser();
         if (currentFile != null) {
             chooser.setCurrentDirectory(currentFile.getParentFile());
         } else {
@@ -304,6 +307,25 @@ public class TimeTakerApp extends JFrame {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             loadFile(chooser.getSelectedFile());
         }
+    }
+
+    /**
+     * Cria um JFileChooser com um checkbox "Mostrar arquivos/pastas ocultos" que controla, ao
+     * vivo, o {@code setFileHidingEnabled}. A escolha e lembrada (campo {@link #showHidden}) e
+     * persistida em {@code timetaker.properties}, valendo para os proximos dialogos e sessoes.
+     */
+    private JFileChooser newChooser() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileHidingEnabled(!showHidden);
+        JCheckBox box = new JCheckBox("Mostrar arquivos/pastas ocultos", showHidden);
+        box.addActionListener(e -> {
+            showHidden = box.isSelected();
+            chooser.setFileHidingEnabled(!showHidden);
+            chooser.rescanCurrentDirectory();
+            saveSettings(); // lembra a preferencia entre dialogos e sessoes
+        });
+        chooser.setAccessory(box);
+        return chooser;
     }
 
     private void saveFile() {
@@ -315,7 +337,7 @@ public class TimeTakerApp extends JFrame {
     }
 
     private void saveFileAs() {
-        JFileChooser chooser = new JFileChooser();
+        JFileChooser chooser = newChooser();
         chooser.setCurrentDirectory(defaultDir);
         if (currentFile != null) {
             chooser.setSelectedFile(currentFile);
@@ -935,7 +957,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -946,6 +968,7 @@ public class TimeTakerApp extends JFrame {
         winX = s.winX;
         winY = s.winY;
         lastFile = s.lastFile;
+        showHidden = s.showHidden;
     }
 
     private void saveSettings() {
@@ -954,7 +977,7 @@ public class TimeTakerApp extends JFrame {
                 ? currentFile.getAbsolutePath() : lastFile;
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
-                winWidth, winHeight, winX, winY, lastFilePath);
+                winWidth, winHeight, winX, winY, lastFilePath, showHidden);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {
