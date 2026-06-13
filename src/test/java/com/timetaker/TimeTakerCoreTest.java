@@ -320,6 +320,78 @@ class TimeTakerCoreTest {
         assertNull(TimeTakerCore.headingTitle("nao e cabecalho"));
     }
 
+    // ----------------------------------------------------- Palavras-chave TODO/DONE
+
+    @Test
+    void keywordSpans_todoNoCabecalho() {
+        java.util.List<TimeTakerCore.KeywordSpan> spans = TimeTakerCore.keywordSpans("# TODO comprar leite");
+        assertEquals(1, spans.size());
+        assertEquals(2, spans.get(0).start);  // offset apos "# "
+        assertEquals(4, spans.get(0).length); // "TODO"
+        assertEquals(TimeTakerCore.Keyword.TODO, spans.get(0).kind);
+    }
+
+    @Test
+    void keywordSpans_doneNoSubcabecalho() {
+        java.util.List<TimeTakerCore.KeywordSpan> spans = TimeTakerCore.keywordSpans("## DONE entregar relatorio");
+        assertEquals(1, spans.size());
+        assertEquals(3, spans.get(0).start);  // offset apos "## "
+        assertEquals(4, spans.get(0).length); // "DONE"
+        assertEquals(TimeTakerCore.Keyword.DONE, spans.get(0).kind);
+    }
+
+    @Test
+    void keywordSpans_corpoNaoColore() {
+        // Linha que nao e cabecalho: TODO no corpo nao deve gerar span.
+        assertTrue(TimeTakerCore.keywordSpans("isto e um TODO solto").isEmpty());
+        assertTrue(TimeTakerCore.keywordSpans("DONE no inicio de texto comum").isEmpty());
+    }
+
+    @Test
+    void keywordSpans_apenasPrimeiroToken() {
+        // TODO/DONE que nao sao o primeiro token do titulo nao sao coloridos.
+        assertTrue(TimeTakerCore.keywordSpans("# comprar TODO").isEmpty());
+        assertTrue(TimeTakerCore.keywordSpans("## relatorio DONE").isEmpty());
+        // E nao casa parcialmente (TODOS != TODO).
+        assertTrue(TimeTakerCore.keywordSpans("# TODOS os itens").isEmpty());
+    }
+
+    @Test
+    void keywordSpans_multiplosCabecalhosOffsetsAbsolutos() {
+        String text = "# TODO um\ncorpo qualquer\n## DONE dois\n* TODO tres";
+        java.util.List<TimeTakerCore.KeywordSpan> spans = TimeTakerCore.keywordSpans(text);
+        assertEquals(3, spans.size());
+
+        // "# TODO um" -> TODO em offset 2
+        assertEquals(2, spans.get(0).start);
+        assertEquals(TimeTakerCore.Keyword.TODO, spans.get(0).kind);
+        assertEquals("TODO", text.substring(spans.get(0).start, spans.get(0).start + spans.get(0).length));
+
+        // "## DONE dois" comeca apos "# TODO um\ncorpo qualquer\n" (10 + 15 = 25); DONE em 25+3
+        assertEquals(28, spans.get(1).start);
+        assertEquals(TimeTakerCore.Keyword.DONE, spans.get(1).kind);
+        assertEquals("DONE", text.substring(spans.get(1).start, spans.get(1).start + spans.get(1).length));
+
+        // "* TODO tres" -> TODO em offset apos "* "
+        assertEquals(TimeTakerCore.Keyword.TODO, spans.get(2).kind);
+        assertEquals("TODO", text.substring(spans.get(2).start, spans.get(2).start + spans.get(2).length));
+    }
+
+    @Test
+    void keywordSpans_semPalavrasChaveListaVazia() {
+        assertTrue(TimeTakerCore.keywordSpans("").isEmpty());
+        assertTrue(TimeTakerCore.keywordSpans("# Projeto comum\ntexto\n* Outro").isEmpty());
+        assertTrue(TimeTakerCore.keywordSpans("linha\noutra linha\n").isEmpty());
+    }
+
+    @Test
+    void keywordSpans_niveisDiferentesDeCabecalho() {
+        // "#", "##" e "*" devem todos colorir o primeiro token quando for TODO/DONE.
+        assertEquals(TimeTakerCore.Keyword.TODO, TimeTakerCore.keywordSpans("# TODO x").get(0).kind);
+        assertEquals(TimeTakerCore.Keyword.DONE, TimeTakerCore.keywordSpans("### DONE y").get(0).kind);
+        assertEquals(TimeTakerCore.Keyword.TODO, TimeTakerCore.keywordSpans("** TODO z").get(0).kind);
+    }
+
     @Test
     void headingLineStartFor() {
         String text = "* A\nlinha\n* B\noutra\n";

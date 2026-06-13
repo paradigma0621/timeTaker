@@ -15,9 +15,26 @@ import javax.swing.undo.UndoManager;
 public final class UndoController {
 
     private final UndoManager manager = new UndoManager();
+    private final Document document;
 
     /** Passa a acompanhar as edicoes do documento informado. */
     public UndoController(Document document) {
+        this.document = document;
+        document.addUndoableEditListener(manager);
+    }
+
+    /**
+     * Suspende o registro de edicoes desfaziveis: enquanto suspenso, mudancas no documento
+     * (ex.: aplicacao de cores/atributos por estilo) NAO entram no historico de undo/redo.
+     * Use em par com {@link #resume()} ao redor de mutacoes puramente visuais.
+     */
+    public void suspend() {
+        document.removeUndoableEditListener(manager);
+    }
+
+    /** Retoma o registro de edicoes desfaziveis apos um {@link #suspend()}. */
+    public void resume() {
+        document.removeUndoableEditListener(manager); // evita registro duplicado
         document.addUndoableEditListener(manager);
     }
 

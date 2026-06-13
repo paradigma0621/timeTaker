@@ -4,6 +4,9 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
@@ -27,7 +30,9 @@ import java.util.Date;
  */
 public class TimeTakerApp extends JFrame {
 
-    private final JTextArea textArea = new JTextArea();
+    // Editor estilizado: JTextPane permite cor por trecho (StyledDocument), necessaria para
+    // colorir as palavras-chave TODO/DONE; um JTextArea so admite uma unica cor de texto.
+    private final JTextPane textArea = new JTextPane();
     private File currentFile;
 
     /** Historico de undo/redo das edicoes do textArea (logica em {@link UndoController}). */
@@ -35,6 +40,16 @@ public class TimeTakerApp extends JFrame {
 
     /** Indica se o documento tem alteracoes nao salvas (documento "sujo"). */
     private boolean modified = false;
+
+    /** Verde escuro usado para colorir a palavra-chave DONE (mais legivel que o verde puro). */
+    private static final Color DONE_GREEN = new Color(0, 153, 0);
+
+    /**
+     * Guarda contra reentrancia: enquanto {@code true}, a recoloracao esta em curso e as
+     * mutacoes de atributo que ela gera no documento NAO devem marcar o documento como sujo
+     * nem disparar nova recoloracao.
+     */
+    private boolean recoloring = false;
 
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
@@ -78,28 +93,28 @@ public class TimeTakerApp extends JFrame {
         });
 
         textArea.setFont(new Font(fontName, Font.PLAIN, fontSize));
-        textArea.setLineWrap(true);
-        textArea.setWrapStyleWord(true);
         textArea.setBorder(new EmptyBorder(6, 6, 6, 6));
 
         // Acompanha as edicoes do documento para undo/redo.
         undoController = new UndoController(textArea.getDocument());
 
-        // Rastreia alteracoes do documento para o controle de "documento sujo".
+        // Rastreia alteracoes do documento (para "documento sujo") e reaplica as cores das
+        // palavras-chave TODO/DONE. As insercoes/remocoes sao alteracoes reais de texto; o
+        // changedUpdate vem de mudancas de atributo (a propria recoloracao) e e ignorado.
         textArea.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                modified = true;
+                onTextChanged();
             }
 
             @Override
             public void removeUpdate(DocumentEvent e) {
-                modified = true;
+                onTextChanged();
             }
 
             @Override
             public void changedUpdate(DocumentEvent e) {
-                modified = true;
+                // Apenas mudancas de atributo (estilo); nao altera o texto nem o estado sujo.
             }
         });
 
@@ -559,6 +574,54 @@ public class TimeTakerApp extends JFrame {
         textArea.setCaretPosition(Math.min(caret, textArea.getDocument().getLength()));
         if (currentFile != null) {
             writeToDisk(currentFile);
+        }
+    }
+
+    // --------------------------------------------------------- Coloracao TODO/DONE
+
+    /**
+     * Reage a uma alteracao real de texto (insercao/remocao): marca o documento como sujo e
+     * agenda a recoloracao das palavras-chave. Durante a propria recoloracao (mutacao de
+     * atributo) e ignorado, evitando reentrancia e nao marcando o documento como sujo.
+     */
+    private void onTextChanged() {
+        if (recoloring) {
+            return;
+        }
+        modified = true;
+        // A recoloracao muta o documento; nao se pode faze-lo durante o evento. Adia-se.
+        SwingUtilities.invokeLater(this::recolorKeywords);
+    }
+
+    /**
+     * Recolore o documento: reseta tudo para a cor padrao e aplica vermelho ao TODO e verde
+     * ao DONE nos trechos calculados por {@link TimeTakerCore#keywordSpans(String)}. O undo e
+     * suspenso para que estas mutacoes de atributo nao poluam o historico de Ctrl+Z, e a flag
+     * {@code recoloring} impede que o DocumentListener as trate como edicoes do usuario.
+     */
+    private void recolorKeywords() {
+        if (recoloring) {
+            return;
+        }
+        recoloring = true;
+        undoController.suspend();
+        try {
+            StyledDocument doc = textArea.getStyledDocument();
+            String text = textArea.getText();
+
+            SimpleAttributeSet base = new SimpleAttributeSet();
+            StyleConstants.setForeground(base, Color.BLACK);
+            doc.setCharacterAttributes(0, doc.getLength(), base, true);
+
+            for (TimeTakerCore.KeywordSpan span : TimeTakerCore.keywordSpans(text)) {
+                SimpleAttributeSet attr = new SimpleAttributeSet();
+                StyleConstants.setForeground(attr,
+                        span.kind == TimeTakerCore.Keyword.TODO ? Color.RED : DONE_GREEN);
+                doc.setCharacterAttributes(span.start, span.length, attr, false);
+            }
+        } finally {
+            undoController.resume();
+            recoloring = false;
         }
     }
 
