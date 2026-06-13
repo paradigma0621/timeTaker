@@ -453,7 +453,9 @@ public final class TimeTakerCore {
         List<KeywordSpan> spans = new ArrayList<>();
         int len = text.length();
         int lineStart = 0;
-        while (lineStart <= len) {
+        // O laco sempre termina pelo break interno (nl < 0 na ultima linha); por isso usa
+        // "while (true)" — uma condicao "lineStart <= len" teria um ramo-falso inalcancavel.
+        while (true) {
             int nl = text.indexOf('\n', lineStart);
             int lineEnd = nl < 0 ? len : nl;
             String line = text.substring(lineStart, lineEnd);
@@ -887,7 +889,9 @@ public final class TimeTakerCore {
      */
     private static int findCoffeeHeading(String text) {
         int lineStart = 0;
-        while (lineStart <= text.length()) {
+        // Termina sempre pelo break interno (nl < 0 na ultima linha): "while (true)" evita um
+        // ramo-falso inalcancavel na condicao do laco.
+        while (true) {
             int nl = text.indexOf('\n', lineStart);
             int lineEnd = nl < 0 ? text.length() : nl;
             if ("Coffee".equals(headingTitle(text.substring(lineStart, lineEnd)))) {
@@ -950,7 +954,9 @@ public final class TimeTakerCore {
         for (int i = to - 1; i >= from; i--) {
             if (!Character.isWhitespace(text.charAt(i))) {
                 int nl = text.indexOf('\n', i);
-                return (nl < 0 || nl > to) ? to : nl;
+                // A quebra apos o ultimo conteudo nunca passa de "to" (sempre inicio de linha ou
+                // fim do texto); basta tratar a ausencia de quebra (conteudo ate o fim da regiao).
+                return nl < 0 ? to : nl;
             }
         }
         return from;

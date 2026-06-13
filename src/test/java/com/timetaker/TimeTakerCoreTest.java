@@ -1368,4 +1368,27 @@ class TimeTakerCoreTest {
         assertEquals(1, d.removeLen);
         assertEquals("z", d.insertText);
     }
+
+    // ----------------------------------------------------- registerCoffee: secao sem quebra final
+
+    @Test
+    void registerCoffee_diaExistenteComoUltimaLinhaSemQuebra() {
+        // Subtopico do dia ja existe e e a ULTIMA linha do documento, sem quebra final.
+        // Exercita o ramo "sem '\n'" da busca da linha do dia (findExactLine) e o calculo do
+        // fim da linha do subtopico (dayLineEnd < 0). Acrescenta a hora sob o subtopico.
+        String text = "# Coffee\n## 2021-11-16 ter";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("# Coffee\n## 2021-11-16 ter\n- 14:32", e.text);
+    }
+
+    @Test
+    void registerCoffee_novoDiaComSecaoSemQuebraFinal() {
+        // Secao existe (com registro de OUTRO dia) e termina na ultima linha sem quebra final.
+        // A busca do subtopico do dia atual falha ao chegar nessa ultima linha (break com nl<0)
+        // e o calculo do ponto de insercao cai no ramo "sem '\n'" de lastContentLineEnd. Cria o
+        // novo subtopico do dia no fim da secao.
+        String text = "# Coffee\n## 2021-11-15 seg\n- 10:00";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("# Coffee\n## 2021-11-15 seg\n- 10:00\n## 2021-11-16 ter\n- 14:32", e.text);
+    }
 }
