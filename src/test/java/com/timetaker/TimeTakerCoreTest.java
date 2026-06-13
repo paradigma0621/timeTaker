@@ -1480,4 +1480,65 @@ class TimeTakerCoreTest {
         // "# A\n" termina em '\n': bodyStart == len, subtreeEnd nem entra no laco (return len).
         assertNull(TimeTakerCore.foldRegionFor("# A\n", 0));
     }
+
+    // ----------------------------------------------------- Auto-enumeracao (autoNumberHeadings)
+
+    @Test
+    void autoNumberHeadings_hierarquiaComResetDeNiveis() {
+        String in = "# A\ntexto\n## B\n## C\n### D\n# E";
+        String out = "# 1 A\ntexto\n## 1.1 B\n## 1.2 C\n### 1.2.1 D\n# 2 E";
+        assertEquals(out, TimeTakerCore.autoNumberHeadings(in));
+    }
+
+    @Test
+    void autoNumberHeadings_substituiNumeroExistente_eEhIdempotente() {
+        String in = "# 7 A\n## 9.9 B";
+        String once = TimeTakerCore.autoNumberHeadings(in);
+        assertEquals("# 1 A\n## 1.1 B", once);
+        // re-rodar nao empilha: atualiza para o mesmo resultado.
+        assertEquals(once, TimeTakerCore.autoNumberHeadings(once));
+    }
+
+    @Test
+    void autoNumberHeadings_preservaTodoEAceitaOrgComEspacamento() {
+        // Mantem a palavra TODO (apos o numero) e preserva o espacamento entre marcador e titulo.
+        assertEquals("#  1 TODO x", TimeTakerCore.autoNumberHeadings("#  TODO x"));
+        assertEquals("* 1 A\n** 1.1 B", TimeTakerCore.autoNumberHeadings("* A\n** B"));
+    }
+
+    @Test
+    void autoNumberHeadings_primeiroNivelProfundoAbreAncestrais() {
+        // Comeca em nivel 2 (sem nivel 1 antes): ancestrais implicitos viram 1 -> "1.1".
+        assertEquals("## 1.1 A", TimeTakerCore.autoNumberHeadings("## A"));
+    }
+
+    @Test
+    void autoNumberHeadings_semCabecalhoOuVazio() {
+        assertEquals("so texto\nmais", TimeTakerCore.autoNumberHeadings("so texto\nmais"));
+        assertEquals("", TimeTakerCore.autoNumberHeadings(""));
+    }
+
+    @Test
+    void autoNumberHeadings_tituloSoComNumeroNaoEhRemovido() {
+        // "# 5" tem titulo "5" sem conteudo apos: nao e tratado como numero a remover.
+        assertEquals("# 1 5", TimeTakerCore.autoNumberHeadings("# 5"));
+    }
+
+    @Test
+    void keywordSpans_ignoraNumeroAntesDeTodoDone() {
+        // Apos a numeracao, TODO/DONE vem depois do numero e ainda devem ser coloridos.
+        String text = "# 1 TODO x\n## 1.1 DONE y";
+        java.util.List<TimeTakerCore.KeywordSpan> spans = TimeTakerCore.keywordSpans(text);
+        assertEquals(2, spans.size());
+        assertEquals(text.indexOf("TODO"), spans.get(0).start);
+        assertEquals(TimeTakerCore.Keyword.TODO, spans.get(0).kind);
+        assertEquals(text.indexOf("DONE"), spans.get(1).start);
+        assertEquals(TimeTakerCore.Keyword.DONE, spans.get(1).kind);
+    }
+
+    @Test
+    void keywordSpans_numeroSeguidoDePalavraComumNaoColore() {
+        // "# 1 foo": apos o numero vem "foo" (nao TODO/DONE) -> nenhum span.
+        assertTrue(TimeTakerCore.keywordSpans("# 1 foo").isEmpty());
+    }
 }

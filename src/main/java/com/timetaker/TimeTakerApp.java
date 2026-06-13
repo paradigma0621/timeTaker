@@ -259,6 +259,10 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK),
                 "toggleFold", this::toggleFold);
 
+        // CTRL+E -> (re)numera hierarquicamente os topicos (cabecalhos).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask),
+                "autoNumber", this::autoNumberTopics);
+
         return menuBar;
     }
 
@@ -736,6 +740,15 @@ public class TimeTakerApp extends JFrame {
         }
     }
 
+    /**
+     * Ctrl+E: (re)numera hierarquicamente os topicos (cabecalhos) do documento, no estilo
+     * 1, 1.1, 1.1.1, 2... Idempotente — re-rodar atualiza os numeros em vez de empilhar — e
+     * desfazivel com Ctrl+Z. Delega a transformacao para {@link TimeTakerCore#autoNumberHeadings}.
+     */
+    private void autoNumberTopics() {
+        applyEdit(TimeTakerCore.autoNumberHeadings(textArea.getText()), textArea.getCaretPosition());
+    }
+
     // --------------------------------------------------------- Folding (encolher/expandir)
 
     /**
@@ -1123,6 +1136,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+Shift+Alt+C  Registra pausa de cafe na secao \"# Coffee\"\n"
                         + "                 (agrupada por dia, no fim do documento)\n"
                         + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
+                        + "  Ctrl+E         (Re)numera os topicos hierarquicamente (1, 1.1, ...)\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"

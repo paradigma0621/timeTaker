@@ -406,6 +406,13 @@ public final class TimeTakerCore {
      */
     static final Pattern HEADING = Pattern.compile("^(\\*+|#+)\\s+(\\S.*)$");
 
+    /**
+     * Numero de enumeracao hierarquica no inicio de um titulo de cabecalho ("1", "1.2",
+     * "1.2.3"), seguido de espaco e do restante do titulo. Grupo 1 = numero; grupo 2 = resto.
+     * Usado para (re)numerar topicos (Ctrl+E) e para ignorar o numero ao colorir TODO/DONE.
+     */
+    static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d+(?:\\.\\d+)*)\\s+(\\S.*)$");
+
     /** Indica se a linha e um cabecalho de projeto. */
     public static boolean isHeading(String line) {
         return HEADING.matcher(line).matches();
@@ -462,6 +469,12 @@ public final class TimeTakerCore {
             Matcher m = HEADING.matcher(line);
             if (m.matches()) {
                 int titleStart = m.start(2); // inicio do titulo (primeiro nao-espaco apos o marcador)
+                // Ignora um numero de enumeracao inicial ("1.2 ") para que TODO/DONE logo apos o
+                // numero continuem sendo coloridos (interacao com a auto-enumeracao do Ctrl+E).
+                Matcher num = LEADING_NUMBER.matcher(line.substring(titleStart));
+                if (num.matches()) {
+                    titleStart += num.start(2);
+                }
                 int tokenEnd = titleStart;
                 while (tokenEnd < line.length() && !Character.isWhitespace(line.charAt(tokenEnd))) {
                     tokenEnd++;
@@ -483,6 +496,80 @@ public final class TimeTakerCore {
             lineStart = nl + 1;
         }
         return spans;
+    }
+
+    // ----------------------------------------------------- Auto-enumeracao de topicos (Ctrl+E)
+
+    /**
+     * (Re)numera hierarquicamente todos os cabecalhos do texto, no estilo "1", "1.1", "1.1.1",
+     * "1.2", "2"... O numero deriva do nivel (quantidade de marcadores "#"/"*"): cada cabecalho
+     * incrementa o contador do seu nivel e zera os niveis mais profundos. Numeros ja existentes
+     * no inicio do titulo sao substituidos, tornando a operacao idempotente (re-rodar atualiza,
+     * nao empilha). Funcao pura; linhas que nao sao cabecalho ficam intactas.
+     */
+    public static String autoNumberHeadings(String text) {
+        StringBuilder out = new StringBuilder(text.length() + 32);
+        List<Integer> counters = new ArrayList<>();
+        int i = 0;
+        int len = text.length();
+        while (true) {
+            int nl = text.indexOf('\n', i);
+            int end = nl < 0 ? len : nl;
+            out.append(renumberHeadingLine(text.substring(i, end), counters));
+            if (nl < 0) {
+                break;
+            }
+            out.append('\n');
+            i = nl + 1;
+        }
+        return out.toString();
+    }
+
+    /**
+     * Reescreve uma linha de cabecalho com o proximo numero hierarquico (atualizando os
+     * contadores por nivel); linhas que nao sao cabecalho sao devolvidas sem alteracao.
+     */
+    private static String renumberHeadingLine(String line, List<Integer> counters) {
+        Matcher m = HEADING.matcher(line);
+        if (!m.matches()) {
+            return line;
+        }
+        int level = m.group(1).length();
+
+        // m.start(2) e o inicio do titulo (primeiro nao-espaco apos o marcador); o trecho entre
+        // os marcadores e ele e o espacamento original, preservado na reconstrucao.
+        String markers = line.substring(0, level);
+        String gap = line.substring(level, m.start(2));
+        String title = m.group(2);
+
+        // Remove um numero de enumeracao pre-existente (so se houver conteudo apos ele).
+        Matcher num = LEADING_NUMBER.matcher(title);
+        if (num.matches()) {
+            title = num.group(2);
+        }
+
+        // Atualiza contadores: abre ancestrais implicitos, incrementa o nivel, zera os profundos.
+        while (counters.size() < level) {
+            counters.add(0);
+        }
+        for (int k = 0; k < level - 1; k++) {
+            if (counters.get(k) == 0) {
+                counters.set(k, 1);
+            }
+        }
+        counters.set(level - 1, counters.get(level - 1) + 1);
+        for (int j = level; j < counters.size(); j++) {
+            counters.set(j, 0);
+        }
+
+        StringBuilder label = new StringBuilder();
+        for (int k = 0; k < level; k++) {
+            if (k > 0) {
+                label.append('.');
+            }
+            label.append(counters.get(k));
+        }
+        return markers + gap + label + " " + title;
     }
 
     /**

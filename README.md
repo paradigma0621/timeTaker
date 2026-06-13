@@ -142,6 +142,25 @@ CLOCK: [2026-06-12 sex 10:30]--[2026-06-12 sex 12:00] =>  1:30
   - 09:05
   ```
 
+## Topicos: numeracao e dobra
+
+- **Ctrl+E** (re)numera **hierarquicamente** todos os cabecalhos conforme o nivel
+  dos marcadores (`#`/`##`/`*`/...), no estilo `1`, `1.1`, `1.1.1`, `1.2`, `2`...
+  E **idempotente**: re-rodar atualiza os numeros (substituindo os anteriores) em
+  vez de empilhar, util apos editar/reordenar topicos. O numero fica antes de um
+  eventual `TODO`/`DONE`, que continua colorido. Desfazivel com `Ctrl+Z`.
+
+  ```
+  # 1 TODO planejar         ## 1.1 levantar requisitos
+  ### 1.1.1 entrevistas     # 2 executar
+  ```
+
+- **Shift+Tab** encolhe/expande o **topico sob o cursor** (folding estilo Org): o
+  corpo do topico (ate o proximo cabecalho de nivel igual ou superior) e ocultado
+  e o cabecalho recebe reticencias `…`. E uma dobra **apenas visual** — o texto do
+  documento nao muda, entao salvar, desfazer e a coloracao seguem sobre o conteudo
+  inteiro. O cursor pula o trecho oculto ao navegar, como no Org.
+
 ## Configuracoes
 
 Em **Editar > Configuracoes** (`Ctrl+,`) e possivel escolher:
@@ -192,6 +211,8 @@ para os proximos dialogos e sessoes.
 | `Ctrl+T`       | Relatorio de tempo por projeto |
 | `Ctrl+Shift+T` | Insere o relatorio de tempo (indentado por projeto) no cursor |
 | `Ctrl+Shift+Alt+C` | Registra uma pausa de cafe na secao `# Coffee` (agrupada por dia) |
+| `Ctrl+E`       | (Re)numera os topicos hierarquicamente (1, 1.1, 1.1.1, ...) |
+| `Shift+Tab`    | Encolhe/expande o topico sob o cursor (folding estilo Org) |
 | `Ctrl+Z`       | Desfazer                      |
 | `Ctrl+Shift+Z` | Refazer                       |
 
