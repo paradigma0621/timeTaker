@@ -5,7 +5,7 @@ Editor de markdown minimalista para registro de tempo (clock-in), em **Java 8 + 
 ## Por que Swing (e nao AWT)?
 
 Ambos vem no JDK (sem runtime extra). Para um editor com barra de menu, aceleradores
-de teclado e area de texto rolavel, o Swing entrega `JMenuBar` / `JTextArea` /
+de teclado e area de texto rolavel, o Swing entrega `JMenuBar` / `JTextPane` /
 `JScrollPane` prontos, com muito menos codigo que o AWT puro — mantendo a aplicacao
 leve e rapida no Windows 11. Os componentes "heavyweight" do AWT nao trazem ganho real
 de desempenho neste caso.
@@ -23,9 +23,13 @@ de desempenho neste caso.
   - **Arquivos**: Novo arquivo, Abrir, Salvar, Salvar como
   - **Editar**: Configuracoes (fonte, tamanho e pasta padrao)
   - **Ajuda**
-- Ao abrir, **carrega automaticamente o arquivo do dia** `ano-mes-dia.md`
-  (ex: `2026-06-10.md`) na **pasta padrao** configurada (por padrao, a pasta
-  de documentos do usuario, detectada conforme o sistema operacional).
+- Ao abrir, **recarrega o ultimo arquivo aberto** na sessao anterior: cada vez
+  que um arquivo e aberto, seu **caminho completo** e gravado como `last.file`
+  em `timetaker.properties`, e no proximo inicio esse arquivo e reaberto. Na
+  primeira execucao — ou se o ultimo arquivo nao existir mais — o app
+  **carrega o arquivo do dia** `ano-mes-dia.md` (ex: `2026-06-10.md`) na
+  **pasta padrao** configurada (por padrao, a pasta de documentos do usuario,
+  detectada conforme o sistema operacional).
 - **Deteccao de SO** (`os.name`): a pasta de documentos e resolvida de forma
   diferente em cada sistema:
   - **Windows**: pasta fisica sempre `Documents` (mesmo em sistemas em
@@ -53,6 +57,12 @@ de desempenho neste caso.
 
   Se todos os registros ja tiverem saida (ou nao houver registro), o app avisa.
   A duracao usa precisao de minuto e suporta intervalos de varias horas (ex.: `4:00`).
+- **Ctrl+Up / Ctrl+Down** ajustam **+1 / -1** o horario `HH:mm` sob o cursor: se o
+  cursor estiver sobre os digitos da **hora**, muda a hora; se estiver sobre os do
+  **minuto**, muda o minuto. O valor da a volta dentro do proprio campo (hora
+  `23 -> 00`, minuto `59 -> 00`) sem propagar para o outro campo, e o zero a
+  esquerda e preservado (ex.: `09`). Fora de um `HH:mm` o atalho nao faz nada.
+  A alteracao e desfazivel com `Ctrl+Z`.
 
 ## Projetos (estilo Org-mode)
 
@@ -103,6 +113,35 @@ CLOCK: [2026-06-12 sex 10:30]--[2026-06-12 sex 12:00] =>  1:30
     Total           2:15
   ```
 
+- **Palavras-chave TODO / DONE coloridas** (estilo Org-mode): quando `TODO` ou
+  `DONE` e a **primeira palavra logo apos o marcador** de um cabecalho, ela e
+  pintada — `TODO` em **vermelho**, `DONE` em **verde**. So vale no cabecalho:
+  `TODO`/`DONE` no meio do texto comum, ou que nao sejam o primeiro token apos o
+  `#`/`*`, ficam sem cor. A coloracao e reaplicada automaticamente conforme voce
+  edita.
+
+  ```
+  ## TODO revisar PR
+  ## DONE escrever testes
+  ```
+
+## Pausas de cafe
+
+- **Ctrl+Shift+Alt+C** registra uma **pausa de cafe** no fim do documento, sob a
+  secao **`# Coffee`** (criada apenas uma vez, se ainda nao existir). Os registros
+  sao agrupados por **subtopico do dia** `## ano-mes-dia ddd` (criado no primeiro
+  cafe do dia) e cada acionamento acrescenta **uma unica linha** `- hora:minuto`.
+  A insercao e desfazivel com `Ctrl+Z`.
+
+  ```
+  # Coffee
+  ## 2026-06-13 sex
+  - 14:32
+  - 16:10
+  ## 2026-06-14 sab
+  - 09:05
+  ```
+
 ## Configuracoes
 
 Em **Editar > Configuracoes** (`Ctrl+,`) e possivel escolher:
@@ -119,11 +158,15 @@ arquivo guarda a geometria da janela:
 font.name=...
 font.size=...
 default.dir=...
+last.file=...
 window.width=1000
 window.height=700
 window.x=...
 window.y=...
 ```
+
+O `last.file` guarda o **caminho completo do ultimo arquivo aberto**, recarregado
+no proximo inicio (veja "Funcionalidades").
 
 ## Atalhos de teclado
 
@@ -137,9 +180,12 @@ window.y=...
 | `F1`           | Ajuda                         |
 | `Ctrl+I`       | Entrada: insere CLOCK no projeto do cursor (ou no fim do arquivo) |
 | `Ctrl+O`       | Saida: fecha o CLOCK em aberto com horario + duracao |
+| `Ctrl+Up`      | Incrementa a hora ou o minuto do `HH:mm` sob o cursor |
+| `Ctrl+Down`    | Decrementa a hora ou o minuto do `HH:mm` sob o cursor |
 | `Ctrl+R`       | Recalcula as duracoes de todos os registros fechados |
 | `Ctrl+T`       | Relatorio de tempo por projeto |
 | `Ctrl+Shift+T` | Insere o relatorio de tempo (indentado por projeto) no cursor |
+| `Ctrl+Shift+Alt+C` | Registra uma pausa de cafe na secao `# Coffee` (agrupada por dia) |
 | `Ctrl+Z`       | Desfazer                      |
 | `Ctrl+Shift+Z` | Refazer                       |
 
