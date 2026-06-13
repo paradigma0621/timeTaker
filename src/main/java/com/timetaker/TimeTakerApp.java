@@ -66,6 +66,9 @@ public class TimeTakerApp extends JFrame {
     private int winX = -1;
     private int winY = -1;
 
+    // Caminho absoluto do ultimo arquivo aberto (persistido em last.file).
+    private String lastFile;
+
     public TimeTakerApp() {
         super("TimeTaker");
 
@@ -123,7 +126,22 @@ public class TimeTakerApp extends JFrame {
 
         setJMenuBar(buildMenuBar());
 
-        // Carrega sempre o arquivo do dia ao iniciar.
+        // Recarrega o ultimo arquivo aberto; senao, o arquivo do dia.
+        openInitialFile();
+    }
+
+    /**
+     * Ao iniciar, reabre o ultimo arquivo aberto se o caminho salvo ainda
+     * apontar para um arquivo existente; caso contrario, abre o arquivo do dia.
+     */
+    private void openInitialFile() {
+        if (lastFile != null) {
+            File f = new File(lastFile);
+            if (f.isFile()) {
+                loadFile(f);
+                return;
+            }
+        }
         openDefaultDailyFile();
     }
 
@@ -438,6 +456,9 @@ public class TimeTakerApp extends JFrame {
             // Limpa o historico: nao faz sentido desfazer de volta ao conteudo anterior.
             undoController.discardHistory();
             modified = false; // conteudo recem-carregado do disco esta limpo
+            // Registra e persiste o ultimo arquivo aberto para recarregar na proxima sessao.
+            lastFile = file.getAbsolutePath();
+            saveSettings();
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this,
                     "Erro ao abrir o arquivo:\n" + ex.getMessage(),
@@ -720,7 +741,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -730,13 +751,16 @@ public class TimeTakerApp extends JFrame {
         winHeight = s.winHeight;
         winX = s.winX;
         winY = s.winY;
+        lastFile = s.lastFile;
     }
 
     private void saveSettings() {
         captureWindowBounds();
+        String lastFilePath = (currentFile != null)
+                ? currentFile.getAbsolutePath() : lastFile;
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
-                winWidth, winHeight, winX, winY);
+                winWidth, winHeight, winX, winY, lastFilePath);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {
