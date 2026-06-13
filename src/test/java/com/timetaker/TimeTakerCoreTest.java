@@ -974,7 +974,7 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- Settings load/save
 
     private static TimeTakerCore.Settings defaults(String dir) {
-        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1);
+        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null);
     }
 
     @Test
@@ -1057,7 +1057,7 @@ class TimeTakerCoreTest {
         Files.createDirectory(docs);
         File cfg = tmp.resolve("out.properties").toFile();
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
-                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6);
+                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null);
         TimeTakerCore.saveSettings(cfg, s);
         assertTrue(cfg.isFile());
 
@@ -1069,6 +1069,40 @@ class TimeTakerCoreTest {
         assertEquals(876, r.winHeight);
         assertEquals(5, r.winX);
         assertEquals(6, r.winY);
+    }
+
+    @Test
+    void saveELoad_fazemRoundTripDoLastFile(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        String caminho = tmp.resolve("2026-06-13.md").toAbsolutePath().toString();
+        TimeTakerCore.Settings s = defaults(tmp.toString());
+        s.lastFile = caminho;
+        TimeTakerCore.saveSettings(cfg, s);
+
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertEquals(caminho, r.lastFile);
+    }
+
+    @Test
+    void loadSettings_semChaveLastFileMantemDefault(@TempDir Path tmp) throws Exception {
+        // Ausencia de last.file nao deve quebrar o load: mantem o default (null aqui).
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "font.size=15\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings s = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertNull(s.lastFile);
+    }
+
+    @Test
+    void saveSettings_lastFileNuloNaoLancaENaoGravaChave(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        TimeTakerCore.Settings s = defaults(tmp.toString()); // lastFile == null
+        assertDoesNotThrow(() -> TimeTakerCore.saveSettings(cfg, s));
+
+        // Recarregar com default nao-nulo confirma que a chave nao foi gravada.
+        TimeTakerCore.Settings base = defaults(tmp.toString());
+        base.lastFile = "fallback";
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, base);
+        assertEquals("fallback", r.lastFile);
     }
 
     // ----------------------------------------------------- I/O de arquivo
