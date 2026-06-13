@@ -1033,4 +1033,71 @@ class TimeTakerCoreTest {
         assertEquals(-1, r.lineStart);
         assertFalse(r.closed());
     }
+
+    // ----------------------------------------------------- Coffee (Ctrl+Shift+Alt+C)
+
+    @Test
+    void formatDay_diaSemHora() {
+        assertEquals("2021-11-16 ter", TimeTakerCore.formatDay(cal(2021, 11, 16, 17, 50, 0)));
+        assertEquals("2021-11-17 qua", TimeTakerCore.formatDay(cal(2021, 11, 17, 0, 0, 0)));
+    }
+
+    @Test
+    void registerCoffee_documentoVazio() {
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee("", cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("# Coffee\n## 2021-11-16 ter\n- 14:32\n", e.text);
+        // Cursor logo apos a linha inserida.
+        assertEquals(e.text.indexOf("- 14:32") + "- 14:32".length(), e.caret);
+    }
+
+    @Test
+    void registerCoffee_criaSecaoQuandoAusente() {
+        // Documento com conteudo previo (terminado em quebra de linha): a secao "# Coffee"
+        // e criada no fim, sem duplicar nem colar no conteudo anterior.
+        String text = "* Projeto\nnotas\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("* Projeto\nnotas\n# Coffee\n## 2021-11-16 ter\n- 14:32\n", e.text);
+    }
+
+    @Test
+    void registerCoffee_documentoSemQuebraFinalGanhaLinhaPropria() {
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee("abc", cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("abc\n# Coffee\n## 2021-11-16 ter\n- 14:32\n", e.text);
+    }
+
+    @Test
+    void registerCoffee_naoDuplicaSecaoEAcrescentaNoMesmoDia() {
+        // Segundo registro do mesmo dia: nao recria "# Coffee" nem o subtopico, apenas
+        // acrescenta a linha sob o subtopico do dia (ordem cronologica preservada).
+        String text = "# Coffee\n## 2021-11-16 ter\n- 14:32\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 16, 10, 0));
+        assertEquals("# Coffee\n## 2021-11-16 ter\n- 14:32\n- 16:10\n", e.text);
+        assertEquals(e.text.indexOf("- 16:10") + "- 16:10".length(), e.caret);
+    }
+
+    @Test
+    void registerCoffee_novoDiaCriaSubtopico() {
+        String text = "# Coffee\n## 2021-11-16 ter\n- 14:32\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 17, 9, 5, 0));
+        assertEquals("# Coffee\n## 2021-11-16 ter\n- 14:32\n## 2021-11-17 qua\n- 09:05\n", e.text);
+        assertEquals(e.text.indexOf("- 09:05") + "- 09:05".length(), e.caret);
+    }
+
+    @Test
+    void registerCoffee_respeitaLimiteDaSecaoComCabecalhoSeguinte() {
+        // A secao "# Coffee" e seguida por outro cabecalho de nivel 1: o novo registro do
+        // dia entra ANTES da linha em branco e do "# Outro", no fim da secao de cafe.
+        String text = "# Coffee\n## 2021-11-16 ter\n- 14:32\n\n# Outro\nconteudo\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 16, 10, 0));
+        assertEquals("# Coffee\n## 2021-11-16 ter\n- 14:32\n- 16:10\n\n# Outro\nconteudo\n", e.text);
+    }
+
+    @Test
+    void registerCoffee_secaoVaziaNoFimSemQuebra() {
+        // "# Coffee" como ultima linha, sem subtopicos nem quebra final: cria o primeiro
+        // subtopico do dia logo abaixo.
+        String text = "notas\n# Coffee";
+        TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
+        assertEquals("notas\n# Coffee\n## 2021-11-16 ter\n- 14:32", e.text);
+    }
 }

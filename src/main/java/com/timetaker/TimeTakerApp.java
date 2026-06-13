@@ -174,6 +174,11 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_T, menuMask | InputEvent.SHIFT_DOWN_MASK),
                 "insertClockReport", this::insertClockReport);
 
+        // CTRL+SHIFT+ALT+C -> registra uma pausa de cafe na secao "# Coffee" no fim do documento.
+        registerGlobalShortcut(
+                KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "coffee", this::insertCoffee);
+
         return menuBar;
     }
 
@@ -525,6 +530,17 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
+     * Ctrl+Shift+Alt+C: registra uma pausa de cafe no fim do documento, sob a secao
+     * "# Coffee" (criada apenas uma vez), agrupada no subtopico do dia. Delega a
+     * transformacao para {@link TimeTakerCore#registerCoffee} e e desfazivel com Ctrl+Z.
+     */
+    private void insertCoffee() {
+        TimeTakerCore.TextEdit edit =
+                TimeTakerCore.registerCoffee(textArea.getText(), TimeTakerCore.nowToMinute());
+        applyEdit(edit.text, edit.caret);
+    }
+
+    /**
      * Ctrl+R: recalcula as duracoes de todos os registros fechados, preservando o cursor.
      */
     private void recalculateDurations() {
@@ -713,6 +729,8 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+T         Relatorio de tempo por projeto\n"
                         + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
+                        + "  Ctrl+Shift+Alt+C  Registra pausa de cafe na secao \"# Coffee\"\n"
+                        + "                 (agrupada por dia, no fim do documento)\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"
