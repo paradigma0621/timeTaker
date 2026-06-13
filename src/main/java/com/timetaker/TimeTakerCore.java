@@ -8,11 +8,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.LinkedHashMap;
+import java.util.Deque;
+import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -366,22 +368,118 @@ public final class TimeTakerCore {
     }
 
     /**
-     * Relatorio de tempo por projeto (estilo org-clock-report): soma as duracoes dos
-     * registros CLOCK fechados de cada secao de projeto, recalculadas a partir dos
-     * horarios de entrada/saida (cai na duracao gravada se os horarios nao puderem ser
-     * interpretados). Registros antes do primeiro cabecalho entram em "(sem projeto)";
-     * registros em aberto nao somam tempo, mas sao indicados como "em andamento".
+     * No da arvore de secoes do relatorio. Cada no guarda o tempo PROPRIO (clocks
+     * fechados diretamente sob ele) e a contagem de clocks em aberto proprios; o tempo
+     * cumulativo (proprio + descendentes) e calculado depois em {@link #accumulate(Node)}.
+     */
+    private static final class Node {
+        final int level;          // comprimento do grupo de marcadores (1=topo); 0 = "(sem projeto)"
+        final String title;
+        final List<Node> children = new ArrayList<>();
+        long ownMs;               // tempo proprio (clocks fechados diretamente sob este no)
+        int ownOpen;              // clocks em aberto proprios
+        long cumMs;               // tempo cumulativo (proprio + descendentes)
+        boolean cumOpen;          // ha algum clock em aberto na subarvore?
+
+        Node(int level, String title) {
+            this.level = level;
+            this.title = title;
+        }
+    }
+
+    /** Calcula recursivamente o tempo cumulativo e o estado "em andamento" da subarvore. */
+    private static void accumulate(Node n) {
+        n.cumMs = n.ownMs;
+        n.cumOpen = n.ownOpen > 0;
+        for (Node c : n.children) {
+            accumulate(c);
+            n.cumMs += c.cumMs;
+            n.cumOpen = n.cumOpen || c.cumOpen;
+        }
+    }
+
+    /**
+     * Acumula a duracao de um registro CLOCK fechado da {@code line} no tempo proprio do
+     * no {@code target}: recalcula a partir dos horarios de entrada/saida e, se forem
+     * ilegiveis, cai na duracao "h:mm" ja gravada.
+     */
+    private static void addClock(Node target, String line, int idx) {
+        Matcher m = CLOSED_CLOCK.matcher(line);
+        if (m.find()) {
+            Date entrada = parseClockInner(m.group(1));
+            Date saida = parseClockInner(m.group(2));
+            if (entrada != null && saida != null) {
+                target.ownMs += Math.max(0, saida.getTime() - entrada.getTime());
+            } else {
+                // Horarios ilegiveis: aproveita a duracao "h:mm" ja gravada.
+                String[] hm = m.group(3).split(":");
+                target.ownMs += (Long.parseLong(hm[0]) * 60 + Long.parseLong(hm[1])) * 60_000L;
+            }
+        } else if (line.indexOf(']', idx) >= 0) {
+            target.ownOpen++; // registro em aberto (com '[...]' mas sem saida)
+        }
+    }
+
+    /** Linha pronta do relatorio: rotulo ja indentado, tempo cumulativo e estado aberto. */
+    private static final class Row {
+        final String label;
+        final long cumMs;
+        final boolean cumOpen;
+
+        Row(String label, long cumMs, boolean cumOpen) {
+            this.label = label;
+            this.cumMs = cumMs;
+            this.cumOpen = cumOpen;
+        }
+    }
+
+    /** Percorre a arvore em pre-ordem, indentando cada nivel com dois espacos por profundidade. */
+    private static void flatten(Node n, int depth, List<Row> rows) {
+        StringBuilder label = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            label.append("  ");
+        }
+        label.append(n.title);
+        rows.add(new Row(label.toString(), n.cumMs, n.cumOpen));
+        for (Node c : n.children) {
+            flatten(c, depth + 1, rows);
+        }
+    }
+
+    /**
+     * Relatorio de tempo por projeto (estilo org-clock-report): monta a hierarquia das
+     * secoes pelo NIVEL do cabecalho (comprimento dos marcadores) e exibe, para cada
+     * secao, o tempo CUMULATIVO = tempo proprio (clocks fechados diretamente sob ela)
+     * MAIS os tempos de todas as suas subsecoes descendentes. As duracoes sao recalculadas
+     * a partir dos horarios de entrada/saida (cai na duracao gravada se forem ilegiveis).
+     * Registros antes do primeiro cabecalho entram em "(sem projeto)"; uma secao e marcada
+     * "(em andamento)" quando ha algum registro em aberto na sua subarvore.
      */
     public static String clockReport(String text) {
-        // LinkedHashMap preserva a ordem de aparicao dos projetos no documento.
-        LinkedHashMap<String, long[]> totals = new LinkedHashMap<>();
-        String project = "(sem projeto)";
+        // roots preserva a ordem de aparicao das secoes de topo no documento.
+        List<Node> roots = new ArrayList<>();
+        // stack: ancestrais da secao corrente, do topo (mais profundo) para a raiz.
+        Deque<Node> stack = new ArrayDeque<>();
+        Node semProjeto = null;   // bucket dos clocks antes do primeiro cabecalho
+        Node current = null;      // secao corrente onde os clocks sao somados
 
         for (String line : text.split("\n", -1)) {
-            String title = headingTitle(line);
-            if (title != null) {
-                project = title;
-                totals.putIfAbsent(project, new long[2]); // projeto aparece mesmo sem registros
+            Matcher h = HEADING.matcher(line);
+            if (h.matches()) {
+                int level = h.group(1).length(); // o comprimento dos marcadores e o nivel
+                Node node = new Node(level, h.group(2).trim());
+                // Desempilha ancestrais de nivel >= ao novo (irmaos e secoes mais profundas):
+                // a nova secao "fecha" tudo que nao a contem.
+                while (!stack.isEmpty() && stack.peek().level >= level) {
+                    stack.pop();
+                }
+                if (stack.isEmpty()) {
+                    roots.add(node);
+                } else {
+                    stack.peek().children.add(node); // filho da secao mais rasa que a contem
+                }
+                stack.push(node);
+                current = node;
                 continue;
             }
 
@@ -389,40 +487,39 @@ public final class TimeTakerCore {
             if (idx < 0) {
                 continue;
             }
-            long[] acc = totals.computeIfAbsent(project, k -> new long[2]);
-
-            Matcher m = CLOSED_CLOCK.matcher(line);
-            if (m.find()) {
-                Date entrada = parseClockInner(m.group(1));
-                Date saida = parseClockInner(m.group(2));
-                if (entrada != null && saida != null) {
-                    acc[0] += Math.max(0, saida.getTime() - entrada.getTime());
-                } else {
-                    // Horarios ilegiveis: aproveita a duracao "h:mm" ja gravada.
-                    String[] hm = m.group(3).split(":");
-                    acc[0] += (Long.parseLong(hm[0]) * 60 + Long.parseLong(hm[1])) * 60_000L;
+            Node target = current;
+            if (target == null) {
+                if (semProjeto == null) {
+                    semProjeto = new Node(0, "(sem projeto)");
+                    roots.add(0, semProjeto); // preambulo aparece antes dos cabecalhos
                 }
-            } else if (line.indexOf(']', idx) >= 0) {
-                acc[1]++; // registro em aberto (com '[...]' mas sem saida)
+                target = semProjeto;
             }
+            addClock(target, line, idx);
         }
 
-        if (totals.isEmpty()) {
+        if (roots.isEmpty()) {
             return "Nenhum registro CLOCK encontrado.";
         }
 
+        // Calcula os totais cumulativos e achata a arvore em pre-ordem (ordem do documento).
+        List<Row> rows = new ArrayList<>();
+        long grandTotal = 0;
+        for (Node root : roots) {
+            accumulate(root);
+            grandTotal += root.cumMs; // soma so as raizes: cada uma ja inclui seus descendentes
+            flatten(root, 0, rows);
+        }
+
         int nameWidth = "Total".length();
-        for (String name : totals.keySet()) {
-            nameWidth = Math.max(nameWidth, name.length());
+        for (Row row : rows) {
+            nameWidth = Math.max(nameWidth, row.label.length());
         }
 
         StringBuilder sb = new StringBuilder("Tempo por projeto:\n\n");
-        long grandTotal = 0;
-        for (Map.Entry<String, long[]> e : totals.entrySet()) {
-            grandTotal += e.getValue()[0];
-            sb.append(String.format("  %-" + nameWidth + "s  %6s", e.getKey(),
-                    formatDuration(e.getValue()[0])));
-            if (e.getValue()[1] > 0) {
+        for (Row row : rows) {
+            sb.append(String.format("  %-" + nameWidth + "s  %6s", row.label, formatDuration(row.cumMs)));
+            if (row.cumOpen) {
                 sb.append("  (em andamento)");
             }
             sb.append('\n');
