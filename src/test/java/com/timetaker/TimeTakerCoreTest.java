@@ -214,6 +214,22 @@ class TimeTakerCoreTest {
     }
 
     @Test
+    void closeOpenClock_abertoDentroDeDrawer() {
+        // O CLOCK em aberto vive dentro de um drawer ":LOGBOOK:"/":END:": a varredura de
+        // tras para frente ignora as linhas do drawer e fecha o registro corretamente.
+        String text = "* A\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00] tarefa\n"
+                + ":END:\n";
+        TimeTakerCore.CloseResult r = TimeTakerCore.closeOpenClock(text, cal(2021, 11, 16, 10, 0, 0));
+        assertEquals(TimeTakerCore.CloseStatus.CLOSED, r.status);
+        assertEquals("* A\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00 tarefa\n"
+                + ":END:\n", r.text);
+    }
+
+    @Test
     void closeOpenClock_todosFechadosEmVariasLinhas() {
         String text = "* A\n"
                 + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
@@ -226,32 +242,64 @@ class TimeTakerCoreTest {
 
     @Test
     void insertClockLine_documentoVazio() {
+        // Sem drawer pre-existente: cria um novo drawer ":LOGBOOK:"/":END:" envolvendo o CLOCK.
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("", cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("CLOCK: [2021-11-16 ter 09:00] ", e.text);
-        assertEquals(e.text.length(), e.caret);
+        assertEquals(":LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
+        // Cursor apos o espaco do registro, logo antes do "\n:END:".
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
     void insertClockLine_fechaTarefaEmAberto() {
+        // CLOCK em aberto solto (sem drawer): fecha o aberto e cria um novo drawer para a
+        // nova entrada no fim do documento.
         String text = "CLOCK: [2021-11-16 ter 09:00] ";
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, cal(2021, 11, 16, 10, 30, 0));
         assertEquals(
                 "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30\n"
-                        + "CLOCK: [2021-11-16 ter 10:30] ",
+                        + ":LOGBOOK:\n"
+                        + "CLOCK: [2021-11-16 ter 10:30] \n"
+                        + ":END:",
                 e.text);
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
     void insertClockLine_conteudoSemNewlineFinal() {
         // Sem CLOCK em aberto, conteudo existente sem '\n' no fim: deve anteceder '\n'.
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("anotacao", cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("anotacao\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+        assertEquals("anotacao\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
     }
 
     @Test
     void insertClockLine_conteudoComNewlineFinal() {
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("anotacao\n", cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("anotacao\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
+        assertEquals("anotacao\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
+    }
+
+    @Test
+    void insertClockLine_drawerExistenteRecebeNovoClockNoTopo() {
+        // Ja existe um drawer: o clock-in mais recente entra logo apos ":LOGBOOK:" (topo).
+        String text = ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals(":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00] \n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n", e.text);
+        String clock = "CLOCK: [2021-11-16 ter 09:00] ";
+        assertEquals(e.text.indexOf(clock) + clock.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLine_logbookSoltoSemEndNaUltimaLinha() {
+        // ":LOGBOOK:" digitado como ultima linha solta, sem '\n' e sem ":END:": o registro
+        // entra logo abaixo (cobre o ramo sem quebra de linha apos ":LOGBOOK:").
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("texto\n:LOGBOOK:", cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("texto\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n", e.text);
+        String clock = "CLOCK: [2021-11-16 ter 09:00] ";
+        assertEquals(e.text.indexOf(clock) + clock.length(), e.caret);
     }
 
     // ----------------------------------------------------- Projetos (estilo Org-mode)
@@ -296,12 +344,13 @@ class TimeTakerCoreTest {
     @Test
     void insertClockLineComCaret_semCabecalhoCaiNoLegado() {
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("anotacao", 3, cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("anotacao\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
-        assertEquals(e.text.length(), e.caret);
+        assertEquals("anotacao\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
     void insertClockLineComCaret_insereNoFimDaSecaoDoCursor() {
+        // Secao sem drawer ainda: cria um novo drawer no fim da secao do cursor.
         String text = "* Projeto A\n"
                 + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
                 + "\n"
@@ -311,29 +360,82 @@ class TimeTakerCoreTest {
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 3, cal(2021, 11, 16, 9, 0, 0));
         assertEquals("* Projeto A\n"
                 + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":LOGBOOK:\n"
                 + "CLOCK: [2021-11-16 ter 09:00] \n"
+                + ":END:\n"
                 + "\n"
                 + "* Projeto B\n"
                 + "notas\n", e.text);
         // Caret logo apos o espaco do novo registro.
-        assertEquals(e.text.indexOf("CLOCK: [2021-11-16 ter 09:00] ")
-                + "CLOCK: [2021-11-16 ter 09:00] ".length(), e.caret);
+        String clock = "CLOCK: [2021-11-16 ter 09:00] ";
+        assertEquals(e.text.indexOf(clock) + clock.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_drawerExistenteNaSecaoRecebeNovoClockNoTopo() {
+        // A secao do cursor ja tem um drawer: o novo registro entra no topo do drawer,
+        // mesmo havendo outra secao (com seu proprio drawer) abaixo.
+        String text = "* Projeto A\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n"
+                + "* Projeto B\n"
+                + ":LOGBOOK:\n"
+                + ":END:\n";
+        // Caret sob "* Projeto A".
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 5, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("* Projeto A\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00] \n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n"
+                + "* Projeto B\n"
+                + ":LOGBOOK:\n"
+                + ":END:\n", e.text);
+        String clock = "CLOCK: [2021-11-16 ter 09:00] ";
+        assertEquals(e.text.indexOf(clock) + clock.length(), e.caret);
+    }
+
+    @Test
+    void insertClockLineComCaret_naoReaproveitaDrawerDeOutraSecao() {
+        // A secao do cursor NAO tem drawer, mas uma secao POSTERIOR tem: a busca e limitada
+        // a secao do cursor (findLogbookOpenLine com to=sectionEnd), entao a secao A cria seu
+        // proprio drawer novo e o drawer da secao B permanece intacto.
+        String text = "* Projeto A\n"
+                + "notas\n"
+                + "* Projeto B\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n";
+        // Caret sob "* Projeto A".
+        TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 3, cal(2021, 11, 16, 9, 0, 0));
+        assertEquals("* Projeto A\n"
+                + "notas\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00] \n"
+                + ":END:\n"
+                + "* Projeto B\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 07:00]--[2021-11-16 ter 08:00] =>  1:00\n"
+                + ":END:\n", e.text);
+        String clock = "CLOCK: [2021-11-16 ter 09:00] ";
+        assertEquals(e.text.indexOf(clock) + clock.length(), e.caret);
     }
 
     @Test
     void insertClockLineComCaret_secaoVaziaInsereLogoAposTitulo() {
         // Cabecalho no fim do documento, sem '\n' final e sem conteudo na secao.
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("* A", 1, cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("* A\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
-        assertEquals(e.text.length(), e.caret);
+        assertEquals("* A\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
     void insertClockLineComCaret_ultimaSecaoComConteudoSemNewlineFinal() {
-        // Ultima linha da secao sem '\n' final: insere no fim do documento.
+        // Ultima linha da secao sem '\n' final: cria o drawer no fim do documento.
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine("* A\nnotas", 6, cal(2021, 11, 16, 9, 0, 0));
-        assertEquals("* A\nnotas\nCLOCK: [2021-11-16 ter 09:00] ", e.text);
-        assertEquals(e.text.length(), e.caret);
+        assertEquals("* A\nnotas\n:LOGBOOK:\nCLOCK: [2021-11-16 ter 09:00] \n:END:", e.text);
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
@@ -349,20 +451,24 @@ class TimeTakerCoreTest {
                 + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00 x\n"
                 + "\n"
                 + "* B\n"
-                + "CLOCK: [2021-11-16 ter 10:00] ", e.text);
-        assertEquals(e.text.length(), e.caret);
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 10:00] \n"
+                + ":END:", e.text);
+        assertEquals(e.text.indexOf("\n:END:"), e.caret);
     }
 
     @Test
     void insertClockLineComCaret_fechaAbertoDaPropriaSecao() {
         // Clock em aberto na mesma secao (depois do cabecalho): fecha sem deslocar o
-        // indice do cabecalho e insere a nova entrada logo abaixo.
+        // indice do cabecalho e cria o drawer da nova entrada logo abaixo.
         String text = "* A\n"
                 + "CLOCK: [2021-11-16 ter 09:00] tarefa\n";
         TimeTakerCore.TextEdit e = TimeTakerCore.insertClockLine(text, 0, cal(2021, 11, 16, 10, 30, 0));
         assertEquals("* A\n"
                 + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30 tarefa\n"
-                + "CLOCK: [2021-11-16 ter 10:30] \n", e.text);
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 10:30] \n"
+                + ":END:\n", e.text);
     }
 
     // ----------------------------------------------------- clockReport
@@ -424,6 +530,19 @@ class TimeTakerCoreTest {
         assertTrue(report.contains("0:10"));
     }
 
+    @Test
+    void clockReport_ignoraLinhasDoDrawer() {
+        // As linhas ":LOGBOOK:"/":END:" nao casam o padrao CLOCK e sao ignoradas; o
+        // cabecalho continua sendo detectado mesmo com o drawer no meio.
+        String in = "* A\n"
+                + ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:00] =>  1:00\n"
+                + ":END:\n";
+        assertEquals("Tempo por projeto:\n\n"
+                + "  A        1:00\n"
+                + "  Total    1:00\n", TimeTakerCore.clockReport(in));
+    }
+
     // ----------------------------------------------------- recalculateDurations
 
     @Test
@@ -444,6 +563,19 @@ class TimeTakerCoreTest {
                 + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 12:00] =>  0:00\n";
         String out = "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 09:30] =>  0:30\n"
                 + "CLOCK: [2021-11-16 ter 10:00]--[2021-11-16 ter 12:00] =>  2:00\n";
+        assertEquals(out, TimeTakerCore.recalculateDurations(in));
+    }
+
+    @Test
+    void recalculate_ignoraLinhasDoDrawer() {
+        // As linhas ":LOGBOOK:"/":END:" nao casam o padrao e ficam intactas; apenas as
+        // duracoes dos registros CLOCK dentro do drawer sao recalculadas.
+        String in = ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  0:01\n"
+                + ":END:\n";
+        String out = ":LOGBOOK:\n"
+                + "CLOCK: [2021-11-16 ter 09:00]--[2021-11-16 ter 10:30] =>  1:30\n"
+                + ":END:\n";
         assertEquals(out, TimeTakerCore.recalculateDurations(in));
     }
 

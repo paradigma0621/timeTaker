@@ -175,6 +175,74 @@ public final class TimeTakerCore {
 
     private static final String CLOCK_OPEN = "CLOCK: [";
 
+    // ----------------------------------------------------- Drawer LOGBOOK (estilo Org)
+    //
+    // Cada grupo de registros CLOCK vive dentro de um drawer estilo Org-mode: uma linha
+    // ":LOGBOOK:" abre o drawer e uma linha ":END:" o fecha. Convencao de alinhamento
+    // adotada aqui: as linhas ":LOGBOOK:"/":END:" e os registros CLOCK ficam SEM
+    // indentacao extra (coluna 0), mantendo o documento consistente e simples. Convencao
+    // de ordenacao (igual ao Emacs Org): o clock-in mais recente entra no TOPO do drawer,
+    // logo apos a linha ":LOGBOOK:". As linhas do drawer NAO sao registros CLOCK: nao
+    // contem "CLOCK: [" nem casam o padrao de duracao, portanto sao ignoradas naturalmente
+    // por closeOpenClock, clockReport e recalculateDurations.
+
+    /** Linha que abre o drawer de registros (comparada apos trim). */
+    static final String LOGBOOK_OPEN_LINE = ":LOGBOOK:";
+
+    /** Linha que fecha o drawer de registros (comparada apos trim). */
+    static final String LOGBOOK_CLOSE_LINE = ":END:";
+
+    /**
+     * Procura, na regiao {@code [from, to)} de {@code text}, o inicio da primeira linha
+     * ":LOGBOOK:" (apos trim). Retorna o indice do inicio dessa linha ou -1 se a regiao
+     * nao contiver nenhum drawer. {@code to} e sempre um inicio de linha ou o fim do texto,
+     * de modo que a varredura nunca corta uma linha ao meio.
+     */
+    static int findLogbookOpenLine(String text, int from, int to) {
+        int lineStart = from;
+        while (lineStart < to) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? text.length() : nl;
+            if (text.substring(lineStart, lineEnd).trim().equals(LOGBOOK_OPEN_LINE)) {
+                return lineStart;
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return -1;
+    }
+
+    /**
+     * Insere "CLOCK: [now] " no TOPO de um drawer ja existente, logo apos a linha
+     * ":LOGBOOK:" que comeca em {@code logbookLineStart}. Em um drawer valido sempre ha
+     * uma quebra de linha apos ":LOGBOOK:" (a linha ":END:" vem depois); o ramo sem quebra
+     * cobre um ":LOGBOOK:" digitado como ultima linha solta. O cursor fica logo apos o
+     * espaco do novo registro, pronto para a descricao.
+     */
+    private static TextEdit insertIntoExistingDrawer(String content, int logbookLineStart, Calendar now) {
+        String clock = CLOCK_OPEN + formatClockStamp(now) + "] ";
+        int nl = content.indexOf('\n', logbookLineStart);
+        int insertAt = nl < 0 ? content.length() : nl + 1;
+        String prefix = nl < 0 ? "\n" : "";
+        String updated = content.substring(0, insertAt) + prefix + clock + "\n" + content.substring(insertAt);
+        return new TextEdit(updated, insertAt + prefix.length() + clock.length());
+    }
+
+    /**
+     * Cria um novo drawer (":LOGBOOK:" + a linha CLOCK + ":END:") logo apos {@code insertAt}
+     * (um indice de fim de linha, ou o fim do texto), precedido de uma quebra de linha. O
+     * cursor fica apos o espaco do novo registro (a linha do meio do drawer).
+     */
+    private static TextEdit createDrawerAt(String content, int insertAt, Calendar now) {
+        String clock = CLOCK_OPEN + formatClockStamp(now) + "] ";
+        String drawer = LOGBOOK_OPEN_LINE + "\n" + clock + "\n" + LOGBOOK_CLOSE_LINE;
+        String updated = content.substring(0, insertAt) + "\n" + drawer + content.substring(insertAt);
+        int caret = insertAt + 1 + (LOGBOOK_OPEN_LINE + "\n").length() + clock.length();
+        return new TextEdit(updated, caret);
+    }
+
     /**
      * Fecha o ultimo registro CLOCK em aberto, anexando "--[saida] =>  h:mm" logo apos o
      * horario de entrada. As linhas sao varridas de tras para frente em busca do ultimo
@@ -246,13 +314,22 @@ public final class TimeTakerCore {
         CloseResult close = closeOpenClock(text, now);
         String content = close.closed() ? close.text : text;
 
-        // Garante que o novo registro comece numa linha nova.
+        // Se ja existir um drawer no documento, o novo registro entra no topo dele.
+        int logbookLineStart = findLogbookOpenLine(content, 0, content.length());
+        if (logbookLineStart >= 0) {
+            return insertIntoExistingDrawer(content, logbookLineStart, now);
+        }
+
+        // Sem drawer: cria um novo no fim do documento (garante quebra de linha antes).
         if (content.length() > 0 && !content.endsWith("\n")) {
             content = content + "\n";
         }
         String clock = "CLOCK: [" + formatClockStamp(now) + "] ";
-        String result = content + clock;
-        return new TextEdit(result, result.length());
+        String drawer = LOGBOOK_OPEN_LINE + "\n" + clock + "\n" + LOGBOOK_CLOSE_LINE;
+        String result = content + drawer;
+        // Cursor apos o espaco do registro CLOCK (a linha do meio do drawer).
+        int caret = content.length() + (LOGBOOK_OPEN_LINE + "\n").length() + clock.length();
+        return new TextEdit(result, caret);
     }
 
     // ----------------------------------------------------- Projetos (estilo Org-mode)
@@ -349,6 +426,12 @@ public final class TimeTakerCore {
         }
         int sectionEnd = nextHeadingStart(content, headingLineEnd);
 
+        // Se a secao ja tiver um drawer, o novo registro entra no topo dele.
+        int logbookLineStart = findLogbookOpenLine(content, headingLineEnd, sectionEnd);
+        if (logbookLineStart >= 0) {
+            return insertIntoExistingDrawer(content, logbookLineStart, now);
+        }
+
         // Ponto de insercao: fim da ultima linha nao vazia da secao (preserva as linhas
         // em branco que separam a proxima secao); secao vazia insere logo apos o titulo.
         int insertAt = headingLineEnd;
@@ -360,9 +443,8 @@ public final class TimeTakerCore {
             }
         }
 
-        String clock = "CLOCK: [" + formatClockStamp(now) + "] ";
-        String updated = content.substring(0, insertAt) + "\n" + clock + content.substring(insertAt);
-        return new TextEdit(updated, insertAt + 1 + clock.length());
+        // Sem drawer na secao: cria um novo nesse ponto de insercao.
+        return createDrawerAt(content, insertAt, now);
     }
 
     /**
