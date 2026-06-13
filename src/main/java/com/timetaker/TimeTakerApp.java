@@ -741,12 +741,19 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
-     * Ctrl+E: (re)numera hierarquicamente os topicos (cabecalhos) do documento, no estilo
-     * 1, 1.1, 1.1.1, 2... Idempotente — re-rodar atualiza os numeros em vez de empilhar — e
-     * desfazivel com Ctrl+Z. Delega a transformacao para {@link TimeTakerCore#autoNumberHeadings}.
+     * Ctrl+E: alterna em dois tempos a enumeracao hierarquica dos topicos (cabecalhos). Se o
+     * documento ainda nao esta numerado, (re)numera no estilo 1, 1.1, 1.1.1, 2...; se ja esta,
+     * remove a numeracao de todos os topicos, deixando so o titulo. O estado e deduzido do
+     * proprio conteudo via {@link TimeTakerCore#hasNumberedHeadings} (nada de estado mutavel na
+     * GUI, fragil apos editar/abrir arquivo). Desfazivel com Ctrl+Z. Delega a transformacao para
+     * {@link TimeTakerCore#autoNumberHeadings} / {@link TimeTakerCore#removeHeadingNumbers}.
      */
     private void autoNumberTopics() {
-        applyEdit(TimeTakerCore.autoNumberHeadings(textArea.getText()), textArea.getCaretPosition());
+        String text = textArea.getText();
+        String result = TimeTakerCore.hasNumberedHeadings(text)
+                ? TimeTakerCore.removeHeadingNumbers(text)
+                : TimeTakerCore.autoNumberHeadings(text);
+        applyEdit(result, textArea.getCaretPosition());
     }
 
     // --------------------------------------------------------- Folding (encolher/expandir)
@@ -1136,7 +1143,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+Shift+Alt+C  Registra pausa de cafe na secao \"# Coffee\"\n"
                         + "                 (agrupada por dia, no fim do documento)\n"
                         + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
-                        + "  Ctrl+E         (Re)numera os topicos hierarquicamente (1, 1.1, ...)\n"
+                        + "  Ctrl+E         Alterna: numera os topicos (1, 1.1, ...) ou remove a numeracao\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"

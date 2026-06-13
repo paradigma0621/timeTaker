@@ -573,6 +573,72 @@ public final class TimeTakerCore {
     }
 
     /**
+     * Remove o numero de enumeracao inicial do titulo de todos os cabecalhos, deixando apenas o
+     * titulo (e o TODO/DONE, se houver). E a operacao inversa de {@link #autoNumberHeadings}:
+     * juntas, formam o toggle de duas etapas do Ctrl+E. Preserva marcadores e o espacamento
+     * original; linhas que nao sao cabecalho — ou cujo titulo nao comeca por numero — ficam
+     * intactas. Funcao pura.
+     */
+    public static String removeHeadingNumbers(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        int i = 0;
+        int len = text.length();
+        while (true) {
+            int nl = text.indexOf('\n', i);
+            int end = nl < 0 ? len : nl;
+            out.append(stripHeadingNumberLine(text.substring(i, end)));
+            if (nl < 0) {
+                break;
+            }
+            out.append('\n');
+            i = nl + 1;
+        }
+        return out.toString();
+    }
+
+    /**
+     * Reescreve uma linha de cabecalho sem o numero de enumeracao inicial (preservando marcadores
+     * e espacamento); linhas que nao sao cabecalho sao devolvidas sem alteracao.
+     */
+    private static String stripHeadingNumberLine(String line) {
+        Matcher m = HEADING.matcher(line);
+        if (!m.matches()) {
+            return line;
+        }
+        String markers = line.substring(0, m.group(1).length());
+        String gap = line.substring(m.group(1).length(), m.start(2));
+        String title = m.group(2);
+        Matcher num = LEADING_NUMBER.matcher(title);
+        if (num.matches()) {
+            title = num.group(2);
+        }
+        return markers + gap + title;
+    }
+
+    /**
+     * Indica se existe ao menos um cabecalho cujo titulo comeca por um numero de enumeracao
+     * ({@link #LEADING_NUMBER}). E o que decide o "tempo" do toggle do Ctrl+E a partir do proprio
+     * conteudo: ja numerado -> remover; ainda nao -> enumerar. Funcao pura.
+     */
+    public static boolean hasNumberedHeadings(String text) {
+        int i = 0;
+        int len = text.length();
+        while (true) {
+            int nl = text.indexOf('\n', i);
+            int end = nl < 0 ? len : nl;
+            Matcher m = HEADING.matcher(text.substring(i, end));
+            if (m.matches() && LEADING_NUMBER.matcher(m.group(2)).matches()) {
+                return true;
+            }
+            if (nl < 0) {
+                break;
+            }
+            i = nl + 1;
+        }
+        return false;
+    }
+
+    /**
      * Inicio da linha do cabecalho de projeto que contem o caret: a linha do proprio
      * caret ou a primeira linha de cabecalho acima dela. Retorna -1 quando o caret nao
      * esta sob nenhum cabecalho (preambulo ou documento sem projetos).

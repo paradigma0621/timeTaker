@@ -1524,6 +1524,48 @@ class TimeTakerCoreTest {
         assertEquals("# 1 5", TimeTakerCore.autoNumberHeadings("# 5"));
     }
 
+    // ----------------------------------------------------- Remocao de numeracao (toggle Ctrl+E)
+
+    @Test
+    void removeHeadingNumbers_removeDeTodosOsNiveis_preservandoNaoCabecalhos() {
+        String in = "# 1 A\ntexto\n## 1.1 B\n### 1.1.1 C\n# 2 D";
+        String out = "# A\ntexto\n## B\n### C\n# D";
+        assertEquals(out, TimeTakerCore.removeHeadingNumbers(in));
+    }
+
+    @Test
+    void removeHeadingNumbers_cabecalhoSemNumeroFicaIntacto_eAceitaOrgComEspacamento() {
+        // Cabecalho sem numero permanece igual; preserva marcadores e o espacamento original.
+        assertEquals("# A", TimeTakerCore.removeHeadingNumbers("# A"));
+        assertEquals("*  TODO x", TimeTakerCore.removeHeadingNumbers("*  1 TODO x"));
+    }
+
+    @Test
+    void removeHeadingNumbers_semCabecalhoOuVazio() {
+        assertEquals("so texto\nmais", TimeTakerCore.removeHeadingNumbers("so texto\nmais"));
+        assertEquals("", TimeTakerCore.removeHeadingNumbers(""));
+    }
+
+    @Test
+    void hasNumberedHeadings_detectaEAlternaEstado() {
+        // Cabecalho numerado em linha posterior a uma linha comum: detecta (true).
+        assertTrue(TimeTakerCore.hasNumberedHeadings("plain\n# 1 A"));
+        // Cabecalho sem numero: false. Documento vazio: false.
+        assertFalse(TimeTakerCore.hasNumberedHeadings("# A"));
+        assertFalse(TimeTakerCore.hasNumberedHeadings(""));
+    }
+
+    @Test
+    void toggleCtrlE_numeraEDepoisRemove_voltaAosTitulosOriginais() {
+        String original = "# A\ntexto\n## B\n### C\n# D";
+        String numbered = TimeTakerCore.autoNumberHeadings(original);
+        assertEquals("# 1 A\ntexto\n## 1.1 B\n### 1.1.1 C\n# 2 D", numbered);
+        assertTrue(TimeTakerCore.hasNumberedHeadings(numbered));
+        // Remover a numeracao do numerado devolve os titulos originais.
+        assertEquals(original, TimeTakerCore.removeHeadingNumbers(numbered));
+        assertFalse(TimeTakerCore.hasNumberedHeadings(original));
+    }
+
     @Test
     void keywordSpans_ignoraNumeroAntesDeTodoDone() {
         // Apos a numeracao, TODO/DONE vem depois do numero e ainda devem ser coloridos.
