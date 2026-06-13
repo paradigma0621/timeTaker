@@ -755,6 +755,50 @@ public final class TimeTakerCore {
         return sb.toString();
     }
 
+    // ----------------------------------------------------- Ajuste de horario sob o cursor
+
+    /** Horario "HH:mm": dois digitos de hora, ':' e dois digitos de minuto. */
+    static final Pattern TIME_FIELD = Pattern.compile("\\d{2}:\\d{2}");
+
+    /**
+     * Ajusta em {@code delta} a HORA ou o MINUTO do horario "HH:mm" sob o caret (Ctrl+Up = +1,
+     * Ctrl+Down = -1). Localiza o "HH:mm" cujos digitos contem ou encostam o caret (a regiao
+     * {@code [inicio, fim]}, inclusive nas duas pontas). O campo afetado depende da posicao
+     * relativa ao ':': {@code caret <= indice do ':'} ajusta a HORA, {@code caret >} ajusta o
+     * MINUTO — ou seja, o caret encostado a esquerda do ':' (logo apos "HH") ainda conta como
+     * hora, e logo apos o ':' (antes de "mm") conta como minuto. O wrap fica DENTRO do proprio
+     * campo, sem propagar "vai-um": hora 23->00 e 00->23; minuto 59->00 e 00->59. Apenas os dois
+     * digitos do campo sao reescritos (com zero a esquerda), preservando o resto da linha; o
+     * cursor permanece na mesma posicao (o campo tem largura fixa de 5 caracteres). Retorna
+     * {@code null} (no-op) quando o caret nao esta sobre nenhum "HH:mm". Funcao pura.
+     */
+    public static TextEdit adjustTimeField(String text, int caret, int delta) {
+        if (text == null) {
+            return null;
+        }
+        caret = Math.max(0, Math.min(caret, text.length()));
+        Matcher m = TIME_FIELD.matcher(text);
+        while (m.find()) {
+            int start = m.start(); // primeiro digito da hora
+            int end = m.end();     // logo apos o ultimo digito do minuto (start + 5)
+            if (caret < start || caret > end) {
+                continue;
+            }
+            int colon = start + 2; // indice do ':'
+            int hour = Integer.parseInt(text.substring(start, start + 2));
+            int minute = Integer.parseInt(text.substring(start + 3, start + 5));
+            if (caret <= colon) {
+                hour = ((hour + delta) % 24 + 24) % 24;
+            } else {
+                minute = ((minute + delta) % 60 + 60) % 60;
+            }
+            String replacement = String.format("%02d:%02d", hour, minute);
+            String updated = text.substring(0, start) + replacement + text.substring(end);
+            return new TextEdit(updated, caret);
+        }
+        return null;
+    }
+
     // ----------------------------------------------------- Coffee (pausas de cafe)
     //
     // O comando "Coffee" (Ctrl+Shift+Alt+C) registra uma pausa de cafe no FINAL do

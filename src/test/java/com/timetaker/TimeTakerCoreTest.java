@@ -1172,4 +1172,107 @@ class TimeTakerCoreTest {
         TimeTakerCore.TextEdit e = TimeTakerCore.registerCoffee(text, cal(2021, 11, 16, 14, 32, 0));
         assertEquals("notas\n# Coffee\n## 2021-11-16 ter\n- 14:32", e.text);
     }
+
+    // ----------------------------------------------------- adjustTimeField (Ctrl+Up/Down)
+
+    @Test
+    void adjustTimeField_caretSobreHora_incrementa() {
+        // (a) caret sobre os digitos da hora, +1: ajusta a HORA.
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int t = text.indexOf("17:50");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustTimeField(text, t + 1, 1);
+        assertEquals("CLOCK: [2021-11-16 ter 18:50]", e.text);
+        assertEquals(t + 1, e.caret); // cursor permanece no mesmo lugar
+    }
+
+    @Test
+    void adjustTimeField_caretSobreMinuto_incrementa() {
+        // (b) caret sobre os digitos do minuto, +1: ajusta o MINUTO.
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int t = text.indexOf("17:50");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustTimeField(text, t + 4, 1);
+        assertEquals("CLOCK: [2021-11-16 ter 17:51]", e.text);
+        assertEquals(t + 4, e.caret);
+    }
+
+    @Test
+    void adjustTimeField_deltaNegativo_decrementa() {
+        // (c) delta -1 sobre a hora e sobre o minuto.
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int t = text.indexOf("17:50");
+        assertEquals("CLOCK: [2021-11-16 ter 16:50]",
+                TimeTakerCore.adjustTimeField(text, t + 1, -1).text);
+        assertEquals("CLOCK: [2021-11-16 ter 17:49]",
+                TimeTakerCore.adjustTimeField(text, t + 4, -1).text);
+    }
+
+    @Test
+    void adjustTimeField_wrapHora() {
+        // (d) wrap da hora: 23 +1 -> 00 e 00 -1 -> 23 (sem propagar para a data).
+        String t23 = "x 23:50 y";
+        assertEquals("x 00:50 y", TimeTakerCore.adjustTimeField(t23, t23.indexOf("23:50") + 1, 1).text);
+        String t00 = "x 00:50 y";
+        assertEquals("x 23:50 y", TimeTakerCore.adjustTimeField(t00, t00.indexOf("00:50") + 1, -1).text);
+    }
+
+    @Test
+    void adjustTimeField_wrapMinuto() {
+        // (e) wrap do minuto: 59 +1 -> 00 e 00 -1 -> 59 (sem propagar para a hora).
+        String t59 = "x 17:59 y";
+        assertEquals("x 17:00 y", TimeTakerCore.adjustTimeField(t59, t59.indexOf("17:59") + 4, 1).text);
+        String t00 = "x 17:00 y";
+        assertEquals("x 17:59 y", TimeTakerCore.adjustTimeField(t00, t00.indexOf("17:00") + 4, -1).text);
+    }
+
+    @Test
+    void adjustTimeField_foraDeHorario_noOp() {
+        // (f) caret fora de qualquer "HH:mm" -> retorna null (no-op silencioso).
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        assertNull(TimeTakerCore.adjustTimeField(text, 0, 1));          // no inicio da linha
+        assertNull(TimeTakerCore.adjustTimeField(text, 2, 1));          // dentro de "CLOCK"
+        assertNull(TimeTakerCore.adjustTimeField("sem horario", 3, 1)); // texto sem HH:mm
+        assertNull(TimeTakerCore.adjustTimeField(null, 0, 1));          // texto null
+    }
+
+    @Test
+    void adjustTimeField_fronteiraDoDoisPontos() {
+        // (g) regra na fronteira do ':': caret <= indice do ':' ajusta a HORA; caret > ':'
+        //     ajusta o MINUTO. Tambem cobre as duas pontas (caret == inicio e == fim).
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int t = text.indexOf("17:50");
+        // caret == inicio (sobre o primeiro digito da hora) -> hora
+        assertEquals("CLOCK: [2021-11-16 ter 18:50]", TimeTakerCore.adjustTimeField(text, t, 1).text);
+        // caret == indice do ':' (logo apos "HH") -> ainda hora
+        assertEquals("CLOCK: [2021-11-16 ter 18:50]", TimeTakerCore.adjustTimeField(text, t + 2, 1).text);
+        // caret == indice do ':' + 1 (logo apos o ':') -> minuto
+        assertEquals("CLOCK: [2021-11-16 ter 17:51]", TimeTakerCore.adjustTimeField(text, t + 3, 1).text);
+        // caret == fim (logo apos o ultimo digito do minuto) -> minuto
+        assertEquals("CLOCK: [2021-11-16 ter 17:51]", TimeTakerCore.adjustTimeField(text, t + 5, 1).text);
+    }
+
+    @Test
+    void adjustTimeField_preservaZeroAEsquerdaEResto() {
+        // (h) zero a esquerda preservado e o resto da linha/timestamp intacto.
+        String text = "CLOCK: [2021-11-16 ter 09:05] estudando";
+        int t = text.indexOf("09:05");
+        // hora 09 -> 08 (mantem o zero a esquerda)
+        assertEquals("CLOCK: [2021-11-16 ter 08:05] estudando",
+                TimeTakerCore.adjustTimeField(text, t + 1, -1).text);
+        // minuto 05 -> 06 (mantem o zero a esquerda)
+        assertEquals("CLOCK: [2021-11-16 ter 09:06] estudando",
+                TimeTakerCore.adjustTimeField(text, t + 4, 1).text);
+        // hora 09 -> 10 (passa a dois digitos sem zero, resto intacto)
+        assertEquals("CLOCK: [2021-11-16 ter 10:05] estudando",
+                TimeTakerCore.adjustTimeField(text, t + 1, 1).text);
+    }
+
+    @Test
+    void adjustTimeField_segundoHorarioDaLinha() {
+        // Garante que a busca encontra o "HH:mm" correto quando ha varios na mesma linha
+        // (entrada e saida de um registro fechado).
+        String text = "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28";
+        int t = text.indexOf("18:18");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustTimeField(text, t + 1, 1);
+        assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 19:18] =>  0:28", e.text);
+    }
 }

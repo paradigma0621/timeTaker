@@ -194,6 +194,12 @@ public class TimeTakerApp extends JFrame {
                 KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "coffee", this::insertCoffee);
 
+        // CTRL+UP / CTRL+DOWN -> ajusta a hora ou o minuto do "HH:mm" sob o cursor.
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, menuMask),
+                "adjustTimeUp", () -> adjustTimeField(1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, menuMask),
+                "adjustTimeDown", () -> adjustTimeField(-1));
+
         return menuBar;
     }
 
@@ -556,6 +562,20 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
+     * Ctrl+Up / Ctrl+Down: ajusta em {@code delta} a hora ou o minuto do horario "HH:mm" sob o
+     * cursor (o campo depende de o cursor estar sobre "HH" ou "mm"). Delega a logica pura a
+     * {@link TimeTakerCore#adjustTimeField}; se o cursor nao estiver sobre um "HH:mm", e um
+     * no-op silencioso. A edicao passa por {@link #applyEdit}, sendo desfazivel com Ctrl+Z.
+     */
+    private void adjustTimeField(int delta) {
+        TimeTakerCore.TextEdit edit = TimeTakerCore.adjustTimeField(
+                textArea.getText(), textArea.getCaretPosition(), delta);
+        if (edit != null) {
+            applyEdit(edit.text, edit.caret);
+        }
+    }
+
+    /**
      * Ctrl+R: recalcula as duracoes de todos os registros fechados, preservando o cursor.
      */
     private void recalculateDurations() {
@@ -789,6 +809,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+I         Entrada: insere CLOCK no projeto do cursor\n"
                         + "                 (ou no final do arquivo, sem projeto)\n"
                         + "  Ctrl+O         Saida: fecha o CLOCK em aberto com horario e duracao\n"
+                        + "  Ctrl+Up/Down   Ajusta a hora ou o minuto do HH:mm sob o cursor\n"
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+T         Relatorio de tempo por projeto\n"
                         + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
