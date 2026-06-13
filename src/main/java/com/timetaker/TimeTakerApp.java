@@ -65,6 +65,9 @@ public class TimeTakerApp extends JFrame {
     /** Atributo de paragrafo: cabecalho cujo topico esta dobrado (recebe as reticencias). */
     private static final String FOLD_HEAD_KEY = "timetaker.fold.head";
 
+    /** Guarda contra reentrancia ao reposicionar o cursor para fora de linhas dobradas. */
+    private boolean adjustingCaret = false;
+
     /** Tamanho padrao da janela na primeira execucao. */
     private static final int DEFAULT_WIDTH = 1000;
     private static final int DEFAULT_HEIGHT = 700;
@@ -146,6 +149,11 @@ public class TimeTakerApp extends JFrame {
                 // Apenas mudancas de atributo (estilo); nao altera o texto nem o estado sujo.
             }
         });
+
+        // O cursor nunca deve repousar numa linha dobrada (oculta): ao cair numa, e movido para
+        // a proxima linha visivel. Assim o SHIFT+TAB age sobre o topico que o usuario realmente
+        // ve, e nao sobre uma dobra invisivel onde o offset por acaso aterrissou.
+        textArea.addCaretListener(e -> SwingUtilities.invokeLater(this::skipFoldedCaret));
 
         JScrollPane scroll = new JScrollPane(textArea);
         setContentPane(scroll);
@@ -739,8 +747,7 @@ public class TimeTakerApp extends JFrame {
             return;
         }
         StyledDocument doc = textArea.getStyledDocument();
-        Element bodyPar = doc.getParagraphElement(region.bodyStart);
-        boolean folded = Boolean.TRUE.equals(bodyPar.getAttributes().getAttribute(FOLD_BODY_KEY));
+        boolean folded = isFolded(doc.getParagraphElement(region.bodyStart));
         applyFold(doc, region, !folded);
         if (!folded) {
             // Ao recolher, leva o cursor ao cabecalho para nao ficar preso em linha oculta.
@@ -768,6 +775,56 @@ public class TimeTakerApp extends JFrame {
         } finally {
             undoController.resume();
         }
+    }
+
+    /** Indica se o paragrafo informado e uma linha de corpo atualmente dobrada (oculta). */
+    private static boolean isFolded(Element par) {
+        return Boolean.TRUE.equals(par.getAttributes().getAttribute(FOLD_BODY_KEY));
+    }
+
+    /**
+     * Se o cursor estiver numa linha dobrada (oculta), reposiciona-o na primeira linha visivel
+     * seguinte (ou, se nao houver, no cabecalho da dobra). Chamado a cada movimento de cursor;
+     * sem dobras ativas e um no-op barato.
+     */
+    private void skipFoldedCaret() {
+        if (adjustingCaret) {
+            return;
+        }
+        StyledDocument doc = textArea.getStyledDocument();
+        int pos = Math.min(textArea.getCaretPosition(), doc.getLength());
+        if (!isFolded(doc.getParagraphElement(pos))) {
+            return;
+        }
+        adjustingCaret = true;
+        try {
+            textArea.setCaretPosition(firstVisibleOffset(doc, doc.getParagraphElement(pos)));
+        } finally {
+            adjustingCaret = false;
+        }
+    }
+
+    /** Inicio da primeira linha NAO dobrada apos {@code folded}; se nao houver, o cabecalho acima. */
+    private int firstVisibleOffset(StyledDocument doc, Element folded) {
+        int len = doc.getLength();
+        int pos = folded.getEndOffset();
+        while (pos <= len) {
+            Element p = doc.getParagraphElement(Math.min(pos, len));
+            if (!isFolded(p)) {
+                return p.getStartOffset();
+            }
+            int next = p.getEndOffset();
+            if (next <= pos) {
+                break; // guarda contra nao-avanco no ultimo paragrafo
+            }
+            pos = next;
+        }
+        for (int back = folded.getStartOffset() - 1; back >= 0; back = doc.getParagraphElement(back).getStartOffset() - 1) {
+            if (!isFolded(doc.getParagraphElement(back))) {
+                return doc.getParagraphElement(back).getStartOffset();
+            }
+        }
+        return 0;
     }
 
     /** EditorKit que instala a {@link FoldableViewFactory} capaz de colapsar paragrafos dobrados. */
