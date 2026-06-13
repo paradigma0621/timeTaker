@@ -170,6 +170,10 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_T, menuMask),
                 "clockReport", this::showClockReport);
 
+        // CTRL+SHIFT+T -> insere no cursor o relatorio de tempo indentado por projeto.
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_T, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                "insertClockReport", this::insertClockReport);
+
         return menuBar;
     }
 
@@ -498,6 +502,29 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
+     * Ctrl+Shift+T: insere no proprio documento, na posicao do cursor, o relatorio de tempo
+     * HIERARQUICO (indentado conforme o nivel de cada projeto) — diferente do Ctrl+T, que
+     * apenas o exibe num dialogo. O bloco e separado do conteudo anterior por uma quebra de
+     * linha quando necessario, e o cursor fica logo apos o texto inserido. A edicao passa por
+     * {@link #applyEdit}, portanto e desfazivel com Ctrl+Z como as demais.
+     */
+    private void insertClockReport() {
+        int caret = textArea.getCaretPosition();
+        String text = textArea.getText();
+        String report = TimeTakerCore.clockReportIndented(text);
+
+        String before = text.substring(0, caret);
+        // Garante que o relatorio comece numa linha propria, sem colar no conteudo anterior.
+        String block = (before.isEmpty() || before.endsWith("\n")) ? report : "\n" + report;
+        // E que haja uma quebra de linha apos o bloco, separando-o do conteudo seguinte.
+        if (!block.endsWith("\n")) {
+            block = block + "\n";
+        }
+        String updated = before + block + text.substring(caret);
+        applyEdit(updated, caret + block.length());
+    }
+
+    /**
      * Ctrl+R: recalcula as duracoes de todos os registros fechados, preservando o cursor.
      */
     private void recalculateDurations() {
@@ -685,6 +712,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+O         Saida: fecha o CLOCK em aberto com horario e duracao\n"
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+T         Relatorio de tempo por projeto\n"
+                        + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"

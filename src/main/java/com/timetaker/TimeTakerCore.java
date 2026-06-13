@@ -502,42 +502,48 @@ public final class TimeTakerCore {
         }
     }
 
-    /** Linha pronta do relatorio: rotulo ja indentado, tempo cumulativo e estado aberto. */
+    /** Linha pronta do relatorio: rotulo ja indentado, tempo a exibir e estado aberto. */
     private static final class Row {
         final String label;
-        final long cumMs;
-        final boolean cumOpen;
+        final long millis;
+        final boolean open;
 
-        Row(String label, long cumMs, boolean cumOpen) {
+        Row(String label, long millis, boolean open) {
             this.label = label;
-            this.cumMs = cumMs;
-            this.cumOpen = cumOpen;
+            this.millis = millis;
+            this.open = open;
         }
     }
 
-    /** Percorre a arvore em pre-ordem, indentando cada nivel com dois espacos por profundidade. */
-    private static void flatten(Node n, int depth, List<Row> rows) {
+    /**
+     * Percorre a arvore em pre-ordem (ordem do documento), indentando cada nivel com dois
+     * espacos por profundidade. Quando {@code cumulative}, cada linha exibe o tempo/estado
+     * CUMULATIVO da subarvore (preenchido por {@link #accumulate(Node)}); caso contrario,
+     * exibe apenas o tempo/estado PROPRIO do no.
+     */
+    private static void flatten(Node n, int depth, boolean cumulative, List<Row> rows) {
         StringBuilder label = new StringBuilder();
         for (int i = 0; i < depth; i++) {
             label.append("  ");
         }
         label.append(n.title);
-        rows.add(new Row(label.toString(), n.cumMs, n.cumOpen));
+        long millis = cumulative ? n.cumMs : n.ownMs;
+        boolean open = cumulative ? n.cumOpen : n.ownOpen > 0;
+        rows.add(new Row(label.toString(), millis, open));
         for (Node c : n.children) {
-            flatten(c, depth + 1, rows);
+            flatten(c, depth + 1, cumulative, rows);
         }
     }
 
     /**
-     * Relatorio de tempo por projeto (estilo org-clock-report): monta a hierarquia das
-     * secoes pelo NIVEL do cabecalho (comprimento dos marcadores) e exibe, para cada
-     * secao, o tempo CUMULATIVO = tempo proprio (clocks fechados diretamente sob ela)
-     * MAIS os tempos de todas as suas subsecoes descendentes. As duracoes sao recalculadas
-     * a partir dos horarios de entrada/saida (cai na duracao gravada se forem ilegiveis).
-     * Registros antes do primeiro cabecalho entram em "(sem projeto)"; uma secao e marcada
-     * "(em andamento)" quando ha algum registro em aberto na sua subarvore.
+     * Monta a arvore de secoes do documento pelo NIVEL do cabecalho (comprimento dos
+     * marcadores): cada secao vira um {@link Node} com seu tempo PROPRIO e abertos proprios,
+     * aninhado sob a secao mais rasa que o contem. Registros antes do primeiro cabecalho vao
+     * para um no "(sem projeto)" de nivel 0, inserido como primeira raiz. Devolve as raizes
+     * na ordem de aparicao (lista vazia se nao houver nenhum registro CLOCK). Esta arvore e a
+     * representacao unica compartilhada por {@link #clockReport} e {@link #clockReportIndented}.
      */
-    public static String clockReport(String text) {
+    private static List<Node> buildSectionTree(String text) {
         // roots preserva a ordem de aparicao das secoes de topo no documento.
         List<Node> roots = new ArrayList<>();
         // stack: ancestrais da secao corrente, do topo (mais profundo) para a raiz.
@@ -579,20 +585,11 @@ public final class TimeTakerCore {
             }
             addClock(target, line, idx);
         }
+        return roots;
+    }
 
-        if (roots.isEmpty()) {
-            return "Nenhum registro CLOCK encontrado.";
-        }
-
-        // Calcula os totais cumulativos e achata a arvore em pre-ordem (ordem do documento).
-        List<Row> rows = new ArrayList<>();
-        long grandTotal = 0;
-        for (Node root : roots) {
-            accumulate(root);
-            grandTotal += root.cumMs; // soma so as raizes: cada uma ja inclui seus descendentes
-            flatten(root, 0, rows);
-        }
-
+    /** Renderiza as linhas do relatorio com a coluna de duracao alinhada e a linha "Total". */
+    private static String renderReport(List<Row> rows, long grandTotal) {
         int nameWidth = "Total".length();
         for (Row row : rows) {
             nameWidth = Math.max(nameWidth, row.label.length());
@@ -600,14 +597,66 @@ public final class TimeTakerCore {
 
         StringBuilder sb = new StringBuilder("Tempo por projeto:\n\n");
         for (Row row : rows) {
-            sb.append(String.format("  %-" + nameWidth + "s  %6s", row.label, formatDuration(row.cumMs)));
-            if (row.cumOpen) {
+            sb.append(String.format("  %-" + nameWidth + "s  %6s", row.label, formatDuration(row.millis)));
+            if (row.open) {
                 sb.append("  (em andamento)");
             }
             sb.append('\n');
         }
         sb.append(String.format("  %-" + nameWidth + "s  %6s", "Total", formatDuration(grandTotal))).append('\n');
         return sb.toString();
+    }
+
+    /**
+     * Relatorio de tempo por projeto (estilo org-clock-report): monta a hierarquia das
+     * secoes pelo NIVEL do cabecalho e exibe, para cada secao, o tempo CUMULATIVO = tempo
+     * proprio (clocks fechados diretamente sob ela) MAIS os tempos de todas as suas subsecoes
+     * descendentes. As duracoes sao recalculadas a partir dos horarios de entrada/saida (cai
+     * na duracao gravada se forem ilegiveis). Registros antes do primeiro cabecalho entram em
+     * "(sem projeto)"; uma secao e marcada "(em andamento)" quando ha algum registro em aberto
+     * na sua subarvore.
+     */
+    public static String clockReport(String text) {
+        List<Node> roots = buildSectionTree(text);
+        if (roots.isEmpty()) {
+            return "Nenhum registro CLOCK encontrado.";
+        }
+        // Calcula os totais cumulativos e achata a arvore em pre-ordem (ordem do documento).
+        List<Row> rows = new ArrayList<>();
+        long grandTotal = 0;
+        for (Node root : roots) {
+            accumulate(root);
+            grandTotal += root.cumMs; // soma so as raizes: cada uma ja inclui seus descendentes
+            flatten(root, 0, true, rows);
+        }
+        return renderReport(rows, grandTotal);
+    }
+
+    /**
+     * Relatorio de tempo HIERARQUICO, pensado para ser inserido no proprio documento (ao
+     * contrario de {@link #clockReport(String)}, que monta o texto para um dialogo). Reusa a
+     * MESMA arvore de secoes de {@link #buildSectionTree(String)}, mas cada linha exibe apenas
+     * o tempo PROPRIO da secao (sem somar subsecoes); a indentacao reflete a profundidade na
+     * hierarquia (dois espacos por nivel, no estilo de uma org-clock-report aninhada) e as
+     * duracoes ficam alinhadas a direita. Registros antes do primeiro cabecalho entram em
+     * "(sem projeto)"; registros em aberto nao somam tempo, mas marcam a secao com
+     * "(em andamento)". Funcao pura.
+     */
+    public static String clockReportIndented(String text) {
+        List<Node> roots = buildSectionTree(text);
+        if (roots.isEmpty()) {
+            return "Nenhum registro CLOCK encontrado.";
+        }
+        // Achata exibindo o tempo proprio; o Total soma o tempo proprio de todas as secoes.
+        List<Row> rows = new ArrayList<>();
+        for (Node root : roots) {
+            flatten(root, 0, false, rows);
+        }
+        long grandTotal = 0;
+        for (Row row : rows) {
+            grandTotal += row.millis;
+        }
+        return renderReport(rows, grandTotal);
     }
 
     /** Padrao de um registro CLOCK fechado: grupo1=entrada, grupo2=saida, grupo3=duracao atual. */
