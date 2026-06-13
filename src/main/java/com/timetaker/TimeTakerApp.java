@@ -263,6 +263,24 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask),
                 "autoNumber", this::autoNumberTopics);
 
+        // CTRL "+" -> aumenta a fonte do editor. O "+"/"-" variam por layout/teclado,
+        // entao registramos varias KeyStrokes (com/sem SHIFT e as teclas do numpad)
+        // todas apontando para a mesma acao.
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, menuMask),
+                "fontSizeUp", () -> changeFontSize(1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                "fontSizeUpShift", () -> changeFontSize(1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, menuMask),
+                "fontSizeUpPlus", () -> changeFontSize(1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_ADD, menuMask),
+                "fontSizeUpNumpad", () -> changeFontSize(1));
+
+        // CTRL "-" -> diminui a fonte do editor (tecla principal e numpad).
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, menuMask),
+                "fontSizeDown", () -> changeFontSize(-1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, menuMask),
+                "fontSizeDownNumpad", () -> changeFontSize(-1));
+
         return menuBar;
     }
 
@@ -290,6 +308,21 @@ public class TimeTakerApp extends JFrame {
                 action.run();
             }
         });
+    }
+
+    /**
+     * Ajusta o tamanho da fonte do editor em {@code delta}, respeitando os mesmos
+     * limites do seletor em Configuracoes (6 a 96). Reaplica a fonte e persiste as
+     * configuracoes. Nao faz nada se o tamanho ja estiver no limite.
+     */
+    private void changeFontSize(int delta) {
+        int novo = Math.max(6, Math.min(96, fontSize + delta));
+        if (novo == fontSize) {
+            return; // ja esta no limite; nada a fazer
+        }
+        fontSize = novo;
+        textArea.setFont(new Font(fontName, Font.PLAIN, fontSize));
+        saveSettings();
     }
 
     /** Desfaz a ultima edicao de texto; nao faz nada se nao houver historico. */
@@ -1144,6 +1177,7 @@ public class TimeTakerApp extends JFrame {
                         + "                 (agrupada por dia, no fim do documento)\n"
                         + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
                         + "  Ctrl+E         Alterna: numera os topicos (1, 1.1, ...) ou remove a numeracao\n"
+                        + "  Ctrl + / Ctrl -   Aumenta/diminui o tamanho da fonte\n"
                         + "  Ctrl+Z         Desfazer\n"
                         + "  Ctrl+Shift+Z   Refazer\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"
