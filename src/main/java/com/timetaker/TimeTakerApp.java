@@ -7,6 +7,7 @@ import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Element;
+import javax.swing.text.JTextComponent;
 import javax.swing.text.ParagraphView;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
@@ -837,27 +838,29 @@ public class TimeTakerApp extends JFrame {
         }
 
         private void paintEllipsis(Graphics g, Shape a) {
-            Rectangle r = (a instanceof Rectangle) ? (Rectangle) a : a.getBounds();
             Component c = getContainer();
-            FontMetrics fm = g.getFontMetrics(c != null ? c.getFont() : g.getFont());
-            String head = headingText();
-            int x = r.x + fm.stringWidth(head) + fm.charWidth(' ');
-            int y = r.y + fm.getAscent();
-            Color old = g.getColor();
-            g.setColor(Color.GRAY);
-            g.drawString("…", x, y);
-            g.setColor(old);
-        }
-
-        private String headingText() {
-            Element e = getElement();
-            int start = e.getStartOffset();
+            if (!(c instanceof JTextComponent)) {
+                return;
+            }
+            JTextComponent tc = (JTextComponent) c;
+            // Posiciona apos o FIM VISUAL da ultima linha do cabecalho (o offset do '\n' final):
+            // modelToView ja considera a quebra de linha (wrap), entao funciona com titulos de
+            // varias linhas — diferente de medir a largura do texto inteiro numa unica linha.
+            int dotPos = getElement().getEndOffset() - 1;
             try {
-                String s = e.getDocument().getText(start, e.getEndOffset() - start);
-                int nl = s.indexOf('\n');
-                return nl < 0 ? s : s.substring(0, nl);
+                Rectangle p = tc.modelToView(dotPos);
+                if (p == null) {
+                    return;
+                }
+                FontMetrics fm = g.getFontMetrics(tc.getFont());
+                int x = p.x + fm.charWidth(' ');
+                int y = p.y + fm.getAscent();
+                Color old = g.getColor();
+                g.setColor(Color.GRAY);
+                g.drawString("…", x, y);
+                g.setColor(old);
             } catch (BadLocationException ex) {
-                return "";
+                // posicao invalida: nao desenha as reticencias
             }
         }
     }
