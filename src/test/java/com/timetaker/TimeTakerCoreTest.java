@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -1004,7 +1005,7 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- Settings load/save
 
     private static TimeTakerCore.Settings defaults(String dir) {
-        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false);
+        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false, false);
     }
 
     @Test
@@ -1087,7 +1088,7 @@ class TimeTakerCoreTest {
         Files.createDirectory(docs);
         File cfg = tmp.resolve("out.properties").toFile();
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
-                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true);
+                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true, false);
         TimeTakerCore.saveSettings(cfg, s);
         assertTrue(cfg.isFile());
 
@@ -1612,5 +1613,98 @@ class TimeTakerCoreTest {
     void keywordSpans_numeroSeguidoDePalavraComumNaoColore() {
         // "# 1 foo": apos o numero vem "foo" (nao TODO/DONE) -> nenhum span.
         assertTrue(TimeTakerCore.keywordSpans("# 1 foo").isEmpty());
+    }
+
+    // ----------------------------------------------------- Coloracao de titulos por nivel
+
+    @Test
+    void headingColor_mapeiaCadaNivelDaPaleta() {
+        // Niveis 1..6 (1-based) mapeiam diretamente para os indices 0..5 da paleta.
+        for (int level = 1; level <= TimeTakerCore.HEADING_COLORS.length; level++) {
+            assertEquals(TimeTakerCore.HEADING_COLORS[level - 1],
+                    TimeTakerCore.headingColor(level));
+        }
+    }
+
+    @Test
+    void headingColor_saturaNaUltimaCorParaNiveisProfundos() {
+        // Nivel alem do tamanho da paleta reutiliza a ultima cor (saturacao).
+        int ultima = TimeTakerCore.HEADING_COLORS[TimeTakerCore.HEADING_COLORS.length - 1];
+        assertEquals(ultima, TimeTakerCore.headingColor(TimeTakerCore.HEADING_COLORS.length + 1));
+        assertEquals(ultima, TimeTakerCore.headingColor(99));
+    }
+
+    @Test
+    void headingColor_nivelMenorQueUmUsaPrimeiraCor() {
+        // Math.max(1, level) protege niveis <= 0, devolvendo a primeira cor.
+        assertEquals(TimeTakerCore.HEADING_COLORS[0], TimeTakerCore.headingColor(0));
+        assertEquals(TimeTakerCore.HEADING_COLORS[0], TimeTakerCore.headingColor(-3));
+    }
+
+    @Test
+    void colorizeHeadings_textoVazioNaoTemSpans() {
+        // String vazia: o loop processa uma unica linha vazia (nl < 0) e sai sem spans.
+        assertTrue(TimeTakerCore.colorizeHeadings("").isEmpty());
+    }
+
+    @Test
+    void colorizeHeadings_textoSemTitulosNaoTemSpans() {
+        // Linhas comuns separadas por '\n' nao casam com HEADING -> nenhum span.
+        assertTrue(TimeTakerCore.colorizeHeadings("foo\nbar\nbaz").isEmpty());
+    }
+
+    @Test
+    void colorizeHeadings_umTituloSemQuebraFinal() {
+        // Titulo no ultimo caractere, sem '\n' final: cobre o ramo nl < 0 com match.
+        String text = "# Titulo";
+        List<TimeTakerCore.HeadingSpan> spans = TimeTakerCore.colorizeHeadings(text);
+        assertEquals(1, spans.size());
+        assertEquals(0, spans.get(0).start);
+        assertEquals(text.length(), spans.get(0).length);
+        assertEquals(1, spans.get(0).level);
+    }
+
+    @Test
+    void colorizeHeadings_multiplosTitulosComLinhasComunsValidaOffsetsAbsolutos() {
+        // Mistura marcadores '#'/'*', niveis diferentes e linhas comuns no meio.
+        // Os offsets de 'start' devem ser absolutos no texto completo (contando os '\n').
+        String text = "# Um\ntexto comum\n** Dois\noutra linha\n### Tres\n";
+        List<TimeTakerCore.HeadingSpan> spans = TimeTakerCore.colorizeHeadings(text);
+        assertEquals(3, spans.size());
+
+        TimeTakerCore.HeadingSpan s0 = spans.get(0);
+        assertEquals(text.indexOf("# Um"), s0.start);
+        assertEquals("# Um".length(), s0.length);
+        assertEquals(1, s0.level);
+
+        TimeTakerCore.HeadingSpan s1 = spans.get(1);
+        assertEquals(text.indexOf("** Dois"), s1.start);
+        assertEquals("** Dois".length(), s1.length);
+        assertEquals(2, s1.level);
+
+        TimeTakerCore.HeadingSpan s2 = spans.get(2);
+        assertEquals(text.indexOf("### Tres"), s2.start);
+        assertEquals("### Tres".length(), s2.length);
+        assertEquals(3, s2.level);
+    }
+
+    @Test
+    void saveELoad_fazemRoundTripDoColorizeHeadings(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        TimeTakerCore.Settings s = defaults(tmp.toString());
+        s.colorizeHeadings = true;
+        TimeTakerCore.saveSettings(cfg, s);
+
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertTrue(r.colorizeHeadings);
+    }
+
+    @Test
+    void loadSettings_semChaveColorizeHeadingsMantemDefault(@TempDir Path tmp) throws Exception {
+        // Ausencia de colorize.headings mantem o default (false aqui).
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "font.size=20\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertFalse(r.colorizeHeadings);
     }
 }

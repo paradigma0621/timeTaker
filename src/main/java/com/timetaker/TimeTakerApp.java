@@ -91,6 +91,9 @@ public class TimeTakerApp extends JFrame {
     // Mostrar arquivos/pastas ocultos nos dialogos de Abrir / Salvar como (persistido).
     private boolean showHidden;
 
+    // Colorir titulos com uma cor diferente por nivel (persistido em colorize.headings).
+    private boolean colorizeHeadings;
+
     public TimeTakerApp() {
         super("TimeTaker");
 
@@ -763,6 +766,17 @@ public class TimeTakerApp extends JFrame {
             StyleConstants.setForeground(base, Color.BLACK);
             doc.setCharacterAttributes(0, doc.getLength(), base, true);
 
+            // Coloracao de titulos por nivel (se ativada), antes das palavras-chave para que
+            // TODO/DONE no inicio do titulo preservem suas cores por cima da cor do cabecalho.
+            if (colorizeHeadings) {
+                for (TimeTakerCore.HeadingSpan span : TimeTakerCore.colorizeHeadings(text)) {
+                    SimpleAttributeSet attr = new SimpleAttributeSet();
+                    StyleConstants.setForeground(attr,
+                            new Color(TimeTakerCore.headingColor(span.level)));
+                    doc.setCharacterAttributes(span.start, span.length, attr, false);
+                }
+            }
+
             for (TimeTakerCore.KeywordSpan span : TimeTakerCore.keywordSpans(text)) {
                 SimpleAttributeSet attr = new SimpleAttributeSet();
                 StyleConstants.setForeground(attr,
@@ -1032,6 +1046,9 @@ public class TimeTakerApp extends JFrame {
         dirPanel.add(dirField, BorderLayout.CENTER);
         dirPanel.add(browse, BorderLayout.EAST);
 
+        // --- Colorir titulos por nivel ---
+        JCheckBox colorizeBox = new JCheckBox("Colorir titulos por nivel", colorizeHeadings);
+
         // --- Layout do formulario ---
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
@@ -1054,6 +1071,9 @@ public class TimeTakerApp extends JFrame {
         c.gridx = 1; c.weightx = 1;
         form.add(dirPanel, c);
 
+        c.gridx = 1; c.gridy = 3; c.weightx = 1;
+        form.add(colorizeBox, c);
+
         int result = JOptionPane.showConfirmDialog(this, form, "Configuracoes",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
@@ -1073,6 +1093,11 @@ public class TimeTakerApp extends JFrame {
                     "A pasta informada nao existe; mantida a anterior:\n" + defaultDir.getAbsolutePath(),
                     "Configuracoes", JOptionPane.WARNING_MESSAGE);
         }
+
+        // Aplica a preferencia de coloracao e recolore imediatamente o documento.
+        colorizeHeadings = colorizeBox.isSelected();
+        recolorKeywords();
+        textArea.repaint();
 
         saveSettings();
     }
@@ -1098,7 +1123,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, false);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -1110,6 +1135,7 @@ public class TimeTakerApp extends JFrame {
         winY = s.winY;
         lastFile = s.lastFile;
         showHidden = s.showHidden;
+        colorizeHeadings = s.colorizeHeadings;
     }
 
     private void saveSettings() {
@@ -1118,7 +1144,7 @@ public class TimeTakerApp extends JFrame {
                 ? currentFile.getAbsolutePath() : lastFile;
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
-                winWidth, winHeight, winX, winY, lastFilePath, showHidden);
+                winWidth, winHeight, winX, winY, lastFilePath, showHidden, colorizeHeadings);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {

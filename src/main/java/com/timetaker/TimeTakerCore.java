@@ -506,6 +506,76 @@ public final class TimeTakerCore {
         return spans;
     }
 
+    // ----------------------------------------------------- Coloracao de titulos por nivel
+
+    /**
+     * Paleta de cores (RGB empacotado em int, 0xRRGGBB) para colorir titulos por nivel: o
+     * indice 0 vale para o nivel 1, o indice 1 para o nivel 2, e assim por diante. Niveis
+     * mais profundos que a paleta reutilizam a ultima cor. Mantida como int para nao
+     * arrastar dependencia de AWT/Swing ao nucleo; a GUI converte via {@code new Color(rgb)}.
+     */
+    public static final int[] HEADING_COLORS = {
+        0x1565C0, // nivel 1 - azul
+        0x2E7D32, // nivel 2 - verde
+        0xC62828, // nivel 3 - vermelho
+        0x6A1B9A, // nivel 4 - roxo
+        0xEF6C00, // nivel 5 - laranja
+        0x00838F  // nivel 6+ - ciano
+    };
+
+    /** Cor (RGB empacotado) para um cabecalho do nivel informado (1-based), saturando na ultima. */
+    public static int headingColor(int level) {
+        int idx = Math.max(1, level) - 1;
+        if (idx >= HEADING_COLORS.length) {
+            idx = HEADING_COLORS.length - 1;
+        }
+        return HEADING_COLORS[idx];
+    }
+
+    /**
+     * Trecho de linha de cabecalho a colorir: {@code start} e o offset absoluto no texto
+     * completo (contando os '\n'), {@code length} o comprimento da linha do cabecalho e
+     * {@code level} o nivel (quantidade de marcadores "#"/"*"). Imutavel; consumido pela GUI.
+     */
+    public static final class HeadingSpan {
+        public final int start;
+        public final int length;
+        public final int level;
+
+        public HeadingSpan(int start, int length, int level) {
+            this.start = start;
+            this.length = length;
+            this.level = level;
+        }
+    }
+
+    /**
+     * Localiza as linhas de cabecalho a colorir por nivel. Para cada cabecalho devolve um
+     * span cobrindo a linha inteira (marcador + titulo) com offsets ABSOLUTOS no {@code text}
+     * (contando os '\n') e o nivel = quantidade de marcadores. Funcao pura; a GUI aplica a
+     * cor de {@link #headingColor(int)} a cada trecho.
+     */
+    public static List<HeadingSpan> colorizeHeadings(String text) {
+        List<HeadingSpan> spans = new ArrayList<>();
+        int len = text.length();
+        int lineStart = 0;
+        while (true) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? len : nl;
+            String line = text.substring(lineStart, lineEnd);
+            Matcher m = HEADING.matcher(line);
+            if (m.matches()) {
+                int level = m.group(1).length(); // numero de marcadores "#"/"*"
+                spans.add(new HeadingSpan(lineStart, line.length(), level));
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return spans;
+    }
+
     // ----------------------------------------------------- Auto-enumeracao de topicos (Ctrl+E)
 
     /**
@@ -1349,10 +1419,11 @@ public final class TimeTakerCore {
         public int winY;
         public String lastFile; // caminho absoluto do ultimo arquivo aberto (pode ser null)
         public boolean showHidden; // mostrar arquivos/pastas ocultos nos dialogos de arquivo
+        public boolean colorizeHeadings; // colorir titulos com uma cor diferente por nivel
 
         public Settings(String fontName, int fontSize, String defaultDir,
                         int winWidth, int winHeight, int winX, int winY,
-                        String lastFile, boolean showHidden) {
+                        String lastFile, boolean showHidden, boolean colorizeHeadings) {
             this.fontName = fontName;
             this.fontSize = fontSize;
             this.defaultDir = defaultDir;
@@ -1362,6 +1433,7 @@ public final class TimeTakerCore {
             this.winY = winY;
             this.lastFile = lastFile;
             this.showHidden = showHidden;
+            this.colorizeHeadings = colorizeHeadings;
         }
     }
 
@@ -1406,6 +1478,8 @@ public final class TimeTakerCore {
         defaults.lastFile = p.getProperty("last.file", defaults.lastFile);
         defaults.showHidden = Boolean.parseBoolean(
                 p.getProperty("show.hidden", String.valueOf(defaults.showHidden)));
+        defaults.colorizeHeadings = Boolean.parseBoolean(
+                p.getProperty("colorize.headings", String.valueOf(defaults.colorizeHeadings)));
         return defaults;
     }
 
@@ -1423,6 +1497,7 @@ public final class TimeTakerCore {
             p.setProperty("last.file", s.lastFile);
         }
         p.setProperty("show.hidden", String.valueOf(s.showHidden));
+        p.setProperty("colorize.headings", String.valueOf(s.colorizeHeadings));
         try (OutputStream out = Files.newOutputStream(cfg.toPath())) {
             p.store(out, "Configuracoes do TimeTaker");
         }
