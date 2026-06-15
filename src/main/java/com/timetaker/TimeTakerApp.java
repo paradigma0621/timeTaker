@@ -695,8 +695,14 @@ public class TimeTakerApp extends JFrame {
      * no-op silencioso. A edicao passa por {@link #applyEdit}, sendo desfazivel com Ctrl+Z.
      */
     private void adjustTimeField(int delta) {
-        TimeTakerCore.TextEdit edit = TimeTakerCore.adjustTimeField(
-                textArea.getText(), textArea.getCaretPosition(), delta);
+        String text = textArea.getText();
+        int caret = textArea.getCaretPosition();
+        // Sobre a data/dia da semana ("yyyy-MM-dd ddd") desloca o dia; sobre "HH:mm" ajusta a
+        // hora/minuto. As regioes nao se sobrepoem, entao basta tentar a data primeiro.
+        TimeTakerCore.TextEdit edit = TimeTakerCore.adjustDateField(text, caret, delta);
+        if (edit == null) {
+            edit = TimeTakerCore.adjustTimeField(text, caret, delta);
+        }
         if (edit != null) {
             applyEdit(edit.text, edit.caret);
         }
