@@ -1186,6 +1186,48 @@ public final class TimeTakerCore {
         return null;
     }
 
+    // ----------------------------------------------------- Ajuste de data sob o cursor
+
+    /** Token de data "yyyy-MM-dd ddd": data ISO seguida da abreviacao do dia da semana (pt). */
+    static final Pattern DATE_FIELD =
+            Pattern.compile("(\\d{4})-(\\d{2})-(\\d{2}) (dom|seg|ter|qua|qui|sex|sab)");
+
+    /**
+     * Desloca em {@code delta} dias a DATA do token "yyyy-MM-dd ddd" sob o caret (Ctrl+Up = +1,
+     * Ctrl+Down = -1). Localiza o token cujos caracteres contem ou encostam o caret (regiao
+     * {@code [inicio, fim]}, inclusive nas duas pontas), atualizando JUNTOS o "yyyy-MM-dd" e a
+     * abreviacao do dia da semana (recomputada via {@link #weekdayPt(int)}). O token tem largura
+     * fixa (10 + 1 + 3 = 14 caracteres), entao o cursor permanece na mesma posicao. Apos o ajuste,
+     * recalcula as duracoes ({@link #recalculateDurations}) para manter as horas relativas
+     * consistentes. A regiao da data nao se sobrepoe a do horario "HH:mm" (separados por um espaco),
+     * de modo que {@link #adjustTimeField} continua tratando o "HH:mm". Retorna {@code null} (no-op)
+     * quando o caret nao esta sobre uma data/dia da semana. Funcao pura.
+     */
+    public static TextEdit adjustDateField(String text, int caret, int delta) {
+        if (text == null) {
+            return null;
+        }
+        caret = Math.max(0, Math.min(caret, text.length()));
+        Matcher m = DATE_FIELD.matcher(text);
+        while (m.find()) {
+            int start = m.start();
+            int end = m.end();
+            if (caret < start || caret > end) {
+                continue;
+            }
+            Calendar cal = Calendar.getInstance();
+            cal.clear();
+            cal.set(Integer.parseInt(m.group(1)),
+                    Integer.parseInt(m.group(2)) - 1,
+                    Integer.parseInt(m.group(3)));
+            cal.add(Calendar.DAY_OF_MONTH, delta);
+            String replacement = formatDay(cal); // "yyyy-MM-dd ddd" com o dia da semana recomputado
+            String updated = text.substring(0, start) + replacement + text.substring(end);
+            return new TextEdit(recalculateDurations(updated), caret);
+        }
+        return null;
+    }
+
     // ----------------------------------------------------- Coffee (pausas de cafe)
     //
     // O comando "Coffee" (Ctrl+Shift+Alt+C) registra uma pausa de cafe no FINAL do

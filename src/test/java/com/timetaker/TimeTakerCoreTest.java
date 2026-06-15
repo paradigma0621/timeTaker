@@ -1433,6 +1433,87 @@ class TimeTakerCoreTest {
         assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 19:18] =>  0:28", e.text);
     }
 
+    // ----------------------------------------------------- adjustDateField (Ctrl+Up/Down na data)
+
+    @Test
+    void adjustDateField_caretSobreData_incrementaUmDia() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int d = text.indexOf("2021-11-16");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 2, 1);
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", e.text);
+        assertEquals(d + 2, e.caret);
+    }
+
+    @Test
+    void adjustDateField_caretSobreDiaDaSemana_decrementaUmDia() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int w = text.indexOf("ter");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, w + 1, -1);
+        // 2021-11-16 (ter) - 1 dia = 2021-11-15 (seg)
+        assertEquals("CLOCK: [2021-11-15 seg 17:50]", e.text);
+    }
+
+    @Test
+    void adjustDateField_viradaDeMes() {
+        String text = "CLOCK: [2021-11-30 ter 09:00]";
+        int d = text.indexOf("2021-11-30");
+        assertEquals("CLOCK: [2021-12-01 qua 09:00]",
+                TimeTakerCore.adjustDateField(text, d, 1).text);
+    }
+
+    @Test
+    void adjustDateField_viradaDeAno() {
+        String text = "CLOCK: [2021-12-31 sex 09:00]";
+        int d = text.indexOf("2021-12-31");
+        // +1 dia atravessa o ano: 2022-01-01 (sab)
+        assertEquals("CLOCK: [2022-01-01 sab 09:00]",
+                TimeTakerCore.adjustDateField(text, d, 1).text);
+        // -1 dia volta o ano: 2020-12-31 (qui) a partir de 2021-01-01 (sex)
+        String t2 = "CLOCK: [2021-01-01 sex 09:00]";
+        int d2 = t2.indexOf("2021-01-01");
+        assertEquals("CLOCK: [2020-12-31 qui 09:00]",
+                TimeTakerCore.adjustDateField(t2, d2, -1).text);
+    }
+
+    @Test
+    void adjustDateField_recalculaDuracaoQuandoMudaODia() {
+        // Deslocar a data da SAIDA em +1 dia adiciona 24h a duracao; a relativa e recalculada.
+        String text = "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28";
+        int d = text.lastIndexOf("2021-11-16");
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 2, 1);
+        assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-17 qua 18:18] =>  24:28", e.text);
+    }
+
+    @Test
+    void adjustDateField_caretEntreOsDoisTimestamps_eForaDeData_noOp() {
+        // Caret apos a data de entrada (sobre/depois do HH:mm de entrada) e antes da data de
+        // saida: nao esta sobre nenhum token de data -> no-op.
+        String text = "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28";
+        int between = text.indexOf("17:50") + 1; // dentro do HH:mm de entrada
+        assertNull(TimeTakerCore.adjustDateField(text, between, 1));
+    }
+
+    @Test
+    void adjustDateField_foraDeData_noOp() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        assertNull(TimeTakerCore.adjustDateField(text, 0, 1));          // inicio da linha (antes da data)
+        assertNull(TimeTakerCore.adjustDateField(text, text.indexOf("17:50") + 1, 1)); // sobre o HH:mm
+        assertNull(TimeTakerCore.adjustDateField("sem data", 3, 1));    // texto sem token de data
+        assertNull(TimeTakerCore.adjustDateField(null, 0, 1));          // texto null
+    }
+
+    @Test
+    void adjustDateField_fronteirasInclusivas() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int start = text.indexOf("2021-11-16");
+        int end = start + "2021-11-16 ter".length(); // logo apos "ter"
+        // Caret encostado no inicio da data e logo apos o dia da semana ainda contam.
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, start, 1).text);
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, end, 1).text);
+        // Um caractere alem do dia da semana (o espaco antes do HH:mm) ja nao conta.
+        assertNull(TimeTakerCore.adjustDateField(text, end + 1, 1));
+    }
+
     // ----------------------------------------------------- Diff minimo (applyEdit/Ctrl+Z)
 
     @Test
