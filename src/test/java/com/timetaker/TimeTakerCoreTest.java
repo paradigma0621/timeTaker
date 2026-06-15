@@ -38,6 +38,36 @@ class TimeTakerCoreTest {
         assertNotNull(ctor.newInstance());
     }
 
+    // ----------------------------------------------------- Zoom de fonte
+
+    @Test
+    void nextFontSizeIncrementaNormalmente() {
+        assertEquals(14, TimeTakerCore.nextFontSize(13, 1));
+    }
+
+    @Test
+    void nextFontSizeDecrementaNormalmente() {
+        assertEquals(12, TimeTakerCore.nextFontSize(13, -1));
+    }
+
+    @Test
+    void nextFontSizeSaturaNoTeto() {
+        assertEquals(96, TimeTakerCore.nextFontSize(96, 1));
+        assertEquals(96, TimeTakerCore.nextFontSize(95, 10));
+    }
+
+    @Test
+    void nextFontSizeSaturaNoPiso() {
+        assertEquals(6, TimeTakerCore.nextFontSize(6, -1));
+        assertEquals(6, TimeTakerCore.nextFontSize(7, -10));
+    }
+
+    @Test
+    void nextFontSizeDeltaNuloNosLimitesNaoAltera() {
+        assertEquals(96, TimeTakerCore.nextFontSize(96, 0));
+        assertEquals(6, TimeTakerCore.nextFontSize(6, 0));
+    }
+
     // ----------------------------------------------------- Deteccao de SO
 
     @Test
