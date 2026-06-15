@@ -41,7 +41,21 @@ public class TimeTakerApp extends JFrame {
 
     // Editor estilizado: JTextPane permite cor por trecho (StyledDocument), necessaria para
     // colorir as palavras-chave TODO/DONE; um JTextArea so admite uma unica cor de texto.
-    private final JTextPane textArea = new JTextPane();
+    private final JTextPane textArea = new JTextPane() {
+        // Quebra de linha suave (word wrap) e apenas visual. Quando ligada, o editor
+        // acompanha a largura do viewport e o texto quebra na borda. Quando desligada,
+        // devolve a largura preferida (linhas longas) e o JScrollPane rola na horizontal.
+        // O conteudo salvo em disco nunca e alterado por isso.
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            if (wordWrap) {
+                return true;
+            }
+            Component parent = getParent();
+            return parent == null
+                    || getUI().getPreferredSize(this).width <= parent.getSize().width;
+        }
+    };
     private File currentFile;
 
     /** Historico de undo/redo das edicoes do textArea (logica em {@link UndoController}). */
@@ -97,6 +111,10 @@ public class TimeTakerApp extends JFrame {
     // Espacos de indentacao visual por nivel de titulo (0 = desligado). So afeta o desenho,
     // nunca o conteudo salvo em disco. Lido pela FoldableParagraphView ao pintar.
     private int indentSpaces;
+
+    // Quebra de linha suave (word wrap). Apenas visual: quando desligado, as linhas
+    // se estendem horizontalmente com rolagem. Nunca altera o conteudo salvo em disco.
+    private boolean wordWrap = true;
 
     public TimeTakerApp() {
         super("TimeTaker");
@@ -1097,6 +1115,9 @@ public class TimeTakerApp extends JFrame {
         // --- Colorir titulos por nivel ---
         JCheckBox colorizeBox = new JCheckBox("Colorir titulos por nivel", colorizeHeadings);
 
+        // --- Quebra de linha suave (word wrap) ---
+        JCheckBox wrapBox = new JCheckBox("Quebra de linha automatica", wordWrap);
+
         // --- Layout do formulario ---
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
@@ -1127,6 +1148,9 @@ public class TimeTakerApp extends JFrame {
         c.gridx = 1; c.gridy = 3; c.weightx = 1;
         form.add(colorizeBox, c);
 
+        c.gridx = 1; c.gridy = 4; c.weightx = 1;
+        form.add(wrapBox, c);
+
         int result = JOptionPane.showConfirmDialog(this, form, "Configuracoes",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
@@ -1156,6 +1180,11 @@ public class TimeTakerApp extends JFrame {
         recolorKeywords();
         textArea.repaint();
 
+        // Quebra de linha suave: apenas visual. Re-layout do editor para refletir a escolha.
+        wordWrap = wrapBox.isSelected();
+        textArea.revalidate();
+        textArea.repaint();
+
         saveSettings();
     }
 
@@ -1180,7 +1209,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, false, 0);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, false, 0, true);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -1194,6 +1223,7 @@ public class TimeTakerApp extends JFrame {
         showHidden = s.showHidden;
         colorizeHeadings = s.colorizeHeadings;
         indentSpaces = s.indentSpaces;
+        wordWrap = s.wordWrap;
     }
 
     private void saveSettings() {
@@ -1203,7 +1233,7 @@ public class TimeTakerApp extends JFrame {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
                 winWidth, winHeight, winX, winY, lastFilePath, showHidden,
-                colorizeHeadings, indentSpaces);
+                colorizeHeadings, indentSpaces, wordWrap);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {
