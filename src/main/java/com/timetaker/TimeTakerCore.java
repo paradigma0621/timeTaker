@@ -419,7 +419,7 @@ public final class TimeTakerCore {
      * "1.2.3"), seguido de espaco e do restante do titulo. Grupo 1 = numero; grupo 2 = resto.
      * Usado para (re)numerar topicos (Ctrl+E) e para ignorar o numero ao colorir TODO/DONE.
      */
-    static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d+(?:\\.\\d+)*)\\s+(\\S.*)$");
+    static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d+(?:\\.\\d+)*)\\.?\\s+(\\S.*)$");
 
     /** Indica se a linha e um cabecalho de projeto. */
     public static boolean isHeading(String line) {
@@ -647,6 +647,7 @@ public final class TimeTakerCore {
             }
             label.append(counters.get(k));
         }
+        label.append('.');
         return markers + gap + label + " " + title;
     }
 
