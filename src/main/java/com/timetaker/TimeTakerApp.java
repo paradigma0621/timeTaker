@@ -91,6 +91,10 @@ public class TimeTakerApp extends JFrame {
     // Mostrar arquivos/pastas ocultos nos dialogos de Abrir / Salvar como (persistido).
     private boolean showHidden;
 
+    // Espacos de indentacao visual por nivel de titulo (0 = desligado). So afeta o desenho,
+    // nunca o conteudo salvo em disco. Lido pela FoldableParagraphView ao pintar.
+    private int indentSpaces;
+
     public TimeTakerApp() {
         super("TimeTaker");
 
@@ -907,7 +911,7 @@ public class TimeTakerApp extends JFrame {
     }
 
     /** EditorKit que instala a {@link FoldableViewFactory} capaz de colapsar paragrafos dobrados. */
-    private static final class FoldableEditorKit extends StyledEditorKit {
+    private final class FoldableEditorKit extends StyledEditorKit {
         private final ViewFactory factory = new FoldableViewFactory(super.getViewFactory());
 
         @Override
@@ -917,7 +921,7 @@ public class TimeTakerApp extends JFrame {
     }
 
     /** Cria {@link FoldableParagraphView} para paragrafos; delega o resto a fabrica padrao. */
-    private static final class FoldableViewFactory implements ViewFactory {
+    private final class FoldableViewFactory implements ViewFactory {
         private final ViewFactory base;
 
         FoldableViewFactory(ViewFactory base) {
@@ -938,7 +942,7 @@ public class TimeTakerApp extends JFrame {
      * dobrado (FOLD_BODY_KEY) e (b) desenha reticencias apos o titulo quando o paragrafo e o
      * cabecalho de um topico dobrado (FOLD_HEAD_KEY).
      */
-    private static final class FoldableParagraphView extends ParagraphView {
+    private final class FoldableParagraphView extends ParagraphView {
         FoldableParagraphView(Element elem) {
             super(elem);
         }
@@ -967,10 +971,45 @@ public class TimeTakerApp extends JFrame {
             if (flag(FOLD_BODY_KEY)) {
                 return; // corpo dobrado: nao desenha nada
             }
+            // Indentacao visual: desloca o desenho para a direita conforme o nivel do titulo
+            // que contem este paragrafo. So mexe no Graphics (nao no documento) e e revertido
+            // ao final para nao afetar a pintura dos demais paragrafos.
+            int indent = indentPixels(g);
+            if (indent != 0) {
+                g.translate(indent, 0);
+            }
             super.paint(g, a);
             if (flag(FOLD_HEAD_KEY)) {
                 paintEllipsis(g, a);
             }
+            if (indent != 0) {
+                g.translate(-indent, 0);
+            }
+        }
+
+        /**
+         * Deslocamento horizontal (em pixels) deste paragrafo: {@code nivel * indentSpaces}
+         * espacos, convertidos pela largura do espaco na fonte do editor. Zero quando a
+         * indentacao esta desligada ou o paragrafo nao esta sob nenhum titulo.
+         */
+        private int indentPixels(Graphics g) {
+            if (indentSpaces <= 0) {
+                return 0;
+            }
+            int level;
+            try {
+                String text = getDocument().getText(0, getDocument().getLength());
+                level = TimeTakerCore.headingSectionLevel(text, getElement().getStartOffset());
+            } catch (BadLocationException ex) {
+                return 0;
+            }
+            if (level <= 0) {
+                return 0;
+            }
+            Component c = getContainer();
+            FontMetrics fm = (c != null)
+                    ? g.getFontMetrics(c.getFont()) : g.getFontMetrics();
+            return level * indentSpaces * fm.charWidth(' ');
         }
 
         private void paintEllipsis(Graphics g, Shape a) {
@@ -1013,6 +1052,9 @@ public class TimeTakerApp extends JFrame {
         // --- Fonte: tamanho ---
         JSpinner sizeSpinner = new JSpinner(new SpinnerNumberModel(fontSize, 6, 96, 1));
 
+        // --- Indentacao visual por nivel de titulo (0 = desligado) ---
+        JSpinner indentSpinner = new JSpinner(new SpinnerNumberModel(indentSpaces, 0, 32, 1));
+
         // --- Diretorio padrao ---
         JTextField dirField = new JTextField(defaultDir.getAbsolutePath(), 22);
         JButton browse = new JButton("...");
@@ -1048,6 +1090,11 @@ public class TimeTakerApp extends JFrame {
         form.add(sizeSpinner, c);
 
         c.gridx = 0; c.gridy = 2; c.weightx = 0;
+        form.add(new JLabel("Indentacao:"), c);
+        c.gridx = 1; c.weightx = 1;
+        form.add(indentSpinner, c);
+
+        c.gridx = 0; c.gridy = 3; c.weightx = 0;
         form.add(new JLabel("Pasta padrao:"), c);
         c.gridx = 1; c.weightx = 1;
         form.add(dirPanel, c);
@@ -1062,6 +1109,10 @@ public class TimeTakerApp extends JFrame {
         fontName = (String) fontCombo.getSelectedItem();
         fontSize = (Integer) sizeSpinner.getValue();
         textArea.setFont(new Font(fontName, Font.PLAIN, fontSize));
+
+        // Indentacao e apenas visual: aplica e redesenha sem tocar no documento.
+        indentSpaces = (Integer) indentSpinner.getValue();
+        textArea.repaint();
 
         File chosenDir = new File(dirField.getText().trim());
         if (chosenDir.isDirectory()) {
@@ -1096,7 +1147,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, 0);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -1108,6 +1159,7 @@ public class TimeTakerApp extends JFrame {
         winY = s.winY;
         lastFile = s.lastFile;
         showHidden = s.showHidden;
+        indentSpaces = s.indentSpaces;
     }
 
     private void saveSettings() {
@@ -1116,7 +1168,7 @@ public class TimeTakerApp extends JFrame {
                 ? currentFile.getAbsolutePath() : lastFile;
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
-                winWidth, winHeight, winX, winY, lastFilePath, showHidden);
+                winWidth, winHeight, winX, winY, lastFilePath, showHidden, indentSpaces);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {
