@@ -274,6 +274,8 @@ public class TimeTakerApp extends JFrame {
                 "fontSizeUpPlus", () -> changeFontSize(1));
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_ADD, menuMask),
                 "fontSizeUpNumpad", () -> changeFontSize(1));
+        registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, menuMask),
+                "fontSizeUpSlash", () -> changeFontSize(1));
 
         // CTRL "-" -> diminui a fonte do editor (tecla principal e numpad).
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, menuMask),
@@ -316,7 +318,7 @@ public class TimeTakerApp extends JFrame {
      * configuracoes. Nao faz nada se o tamanho ja estiver no limite.
      */
     private void changeFontSize(int delta) {
-        int novo = Math.max(6, Math.min(96, fontSize + delta));
+        int novo = TimeTakerCore.nextFontSize(fontSize, delta);
         if (novo == fontSize) {
             return; // ja esta no limite; nada a fazer
         }

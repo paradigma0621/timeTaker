@@ -60,6 +60,14 @@ public final class TimeTakerCore {
         return normOs(os).contains("win");
     }
 
+    /**
+     * Calcula o novo tamanho de fonte aplicando {@code delta} ao tamanho atual,
+     * com clamp nos limites 6 (piso) e 96 (teto).
+     */
+    public static int nextFontSize(int current, int delta) {
+        return Math.max(6, Math.min(96, current + delta));
+    }
+
     public static boolean isLinux(String os) {
         String o = normOs(os);
         return o.contains("linux") || o.contains("nix") || o.contains("nux") || o.contains("aix");
