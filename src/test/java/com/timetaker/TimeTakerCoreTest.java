@@ -1669,7 +1669,7 @@ class TimeTakerCoreTest {
     @Test
     void autoNumberHeadings_hierarquiaComResetDeNiveis() {
         String in = "# A\ntexto\n## B\n## C\n### D\n# E";
-        String out = "# 1 A\ntexto\n## 1.1 B\n## 1.2 C\n### 1.2.1 D\n# 2 E";
+        String out = "# 1. A\ntexto\n## 1.1. B\n## 1.2. C\n### 1.2.1. D\n# 2. E";
         assertEquals(out, TimeTakerCore.autoNumberHeadings(in));
     }
 
@@ -1677,7 +1677,7 @@ class TimeTakerCoreTest {
     void autoNumberHeadings_substituiNumeroExistente_eEhIdempotente() {
         String in = "# 7 A\n## 9.9 B";
         String once = TimeTakerCore.autoNumberHeadings(in);
-        assertEquals("# 1 A\n## 1.1 B", once);
+        assertEquals("# 1. A\n## 1.1. B", once);
         // re-rodar nao empilha: atualiza para o mesmo resultado.
         assertEquals(once, TimeTakerCore.autoNumberHeadings(once));
     }
@@ -1685,14 +1685,14 @@ class TimeTakerCoreTest {
     @Test
     void autoNumberHeadings_preservaTodoEAceitaOrgComEspacamento() {
         // Mantem a palavra TODO (apos o numero) e preserva o espacamento entre marcador e titulo.
-        assertEquals("#  1 TODO x", TimeTakerCore.autoNumberHeadings("#  TODO x"));
-        assertEquals("* 1 A\n** 1.1 B", TimeTakerCore.autoNumberHeadings("* A\n** B"));
+        assertEquals("#  1. TODO x", TimeTakerCore.autoNumberHeadings("#  TODO x"));
+        assertEquals("* 1. A\n** 1.1. B", TimeTakerCore.autoNumberHeadings("* A\n** B"));
     }
 
     @Test
     void autoNumberHeadings_primeiroNivelProfundoAbreAncestrais() {
         // Comeca em nivel 2 (sem nivel 1 antes): ancestrais implicitos viram 1 -> "1.1".
-        assertEquals("## 1.1 A", TimeTakerCore.autoNumberHeadings("## A"));
+        assertEquals("## 1.1. A", TimeTakerCore.autoNumberHeadings("## A"));
     }
 
     @Test
@@ -1704,14 +1704,15 @@ class TimeTakerCoreTest {
     @Test
     void autoNumberHeadings_tituloSoComNumeroNaoEhRemovido() {
         // "# 5" tem titulo "5" sem conteudo apos: nao e tratado como numero a remover.
-        assertEquals("# 1 5", TimeTakerCore.autoNumberHeadings("# 5"));
+        assertEquals("# 1. 5", TimeTakerCore.autoNumberHeadings("# 5"));
     }
 
     // ----------------------------------------------------- Remocao de numeracao (toggle Ctrl+E)
 
     @Test
     void removeHeadingNumbers_removeDeTodosOsNiveis_preservandoNaoCabecalhos() {
-        String in = "# 1 A\ntexto\n## 1.1 B\n### 1.1.1 C\n# 2 D";
+        // Forma nova (com ponto final) e forma antiga (sem ponto) sao ambas removidas.
+        String in = "# 1. A\ntexto\n## 1.1. B\n### 1.1.1 C\n# 2 D";
         String out = "# A\ntexto\n## B\n### C\n# D";
         assertEquals(out, TimeTakerCore.removeHeadingNumbers(in));
     }
@@ -1736,13 +1737,15 @@ class TimeTakerCoreTest {
         // Cabecalho sem numero: false. Documento vazio: false.
         assertFalse(TimeTakerCore.hasNumberedHeadings("# A"));
         assertFalse(TimeTakerCore.hasNumberedHeadings(""));
+        // Forma nova com ponto final tambem e detectada como numerada.
+        assertTrue(TimeTakerCore.hasNumberedHeadings("# 1. A\n## 2.3. B"));
     }
 
     @Test
     void toggleCtrlE_numeraEDepoisRemove_voltaAosTitulosOriginais() {
         String original = "# A\ntexto\n## B\n### C\n# D";
         String numbered = TimeTakerCore.autoNumberHeadings(original);
-        assertEquals("# 1 A\ntexto\n## 1.1 B\n### 1.1.1 C\n# 2 D", numbered);
+        assertEquals("# 1. A\ntexto\n## 1.1. B\n### 1.1.1. C\n# 2. D", numbered);
         assertTrue(TimeTakerCore.hasNumberedHeadings(numbered));
         // Remover a numeracao do numerado devolve os titulos originais.
         assertEquals(original, TimeTakerCore.removeHeadingNumbers(numbered));
