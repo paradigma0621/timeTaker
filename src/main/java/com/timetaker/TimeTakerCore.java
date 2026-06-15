@@ -739,6 +739,23 @@ public final class TimeTakerCore {
         }
     }
 
+    /**
+     * Nivel do titulo cuja secao contem a posicao informada: a linha de cabecalho do
+     * proprio offset ou o primeiro cabecalho acima dele. Retorna 0 quando a posicao nao
+     * esta sob nenhum titulo (preambulo). Funcao pura.
+     */
+    public static int headingSectionLevel(String text, int position) {
+        int headingStart = headingLineStartFor(text, position);
+        if (headingStart < 0) {
+            return 0;
+        }
+        int headingEnd = text.indexOf('\n', headingStart);
+        if (headingEnd < 0) {
+            headingEnd = text.length();
+        }
+        return headingLevel(text.substring(headingStart, headingEnd));
+    }
+
     // ----------------------------------------------------- Folding (encolher/expandir topicos)
 
     /** Nivel de um cabecalho (numero de marcadores "#"/"*"), ou 0 se a linha nao for cabecalho. */
@@ -1420,10 +1437,12 @@ public final class TimeTakerCore {
         public String lastFile; // caminho absoluto do ultimo arquivo aberto (pode ser null)
         public boolean showHidden; // mostrar arquivos/pastas ocultos nos dialogos de arquivo
         public boolean colorizeHeadings; // colorir titulos com uma cor diferente por nivel
+        public int indentSpaces; // espacos de indentacao visual por nivel de titulo (0 = desligado)
 
         public Settings(String fontName, int fontSize, String defaultDir,
                         int winWidth, int winHeight, int winX, int winY,
-                        String lastFile, boolean showHidden, boolean colorizeHeadings) {
+                        String lastFile, boolean showHidden, boolean colorizeHeadings,
+                        int indentSpaces) {
             this.fontName = fontName;
             this.fontSize = fontSize;
             this.defaultDir = defaultDir;
@@ -1434,6 +1453,7 @@ public final class TimeTakerCore {
             this.lastFile = lastFile;
             this.showHidden = showHidden;
             this.colorizeHeadings = colorizeHeadings;
+            this.indentSpaces = indentSpaces;
         }
     }
 
@@ -1480,6 +1500,8 @@ public final class TimeTakerCore {
                 p.getProperty("show.hidden", String.valueOf(defaults.showHidden)));
         defaults.colorizeHeadings = Boolean.parseBoolean(
                 p.getProperty("colorize.headings", String.valueOf(defaults.colorizeHeadings)));
+        defaults.indentSpaces = Math.max(0, Math.min(32,
+                parseIntOr(p.getProperty("indent.spaces"), defaults.indentSpaces)));
         return defaults;
     }
 
@@ -1498,6 +1520,7 @@ public final class TimeTakerCore {
         }
         p.setProperty("show.hidden", String.valueOf(s.showHidden));
         p.setProperty("colorize.headings", String.valueOf(s.colorizeHeadings));
+        p.setProperty("indent.spaces", String.valueOf(s.indentSpaces));
         try (OutputStream out = Files.newOutputStream(cfg.toPath())) {
             p.store(out, "Configuracoes do TimeTaker");
         }

@@ -1005,7 +1005,7 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- Settings load/save
 
     private static TimeTakerCore.Settings defaults(String dir) {
-        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false, false);
+        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false, false, 0);
     }
 
     @Test
@@ -1088,7 +1088,7 @@ class TimeTakerCoreTest {
         Files.createDirectory(docs);
         File cfg = tmp.resolve("out.properties").toFile();
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
-                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true, false);
+                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true, true, 7);
         TimeTakerCore.saveSettings(cfg, s);
         assertTrue(cfg.isFile());
 
@@ -1101,6 +1101,8 @@ class TimeTakerCoreTest {
         assertEquals(5, r.winX);
         assertEquals(6, r.winY);
         assertTrue(r.showHidden);
+        assertTrue(r.colorizeHeadings);
+        assertEquals(7, r.indentSpaces);
     }
 
     @Test
@@ -1155,6 +1157,75 @@ class TimeTakerCoreTest {
         base.lastFile = "fallback";
         TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, base);
         assertEquals("fallback", r.lastFile);
+    }
+
+    // ----------------------------------------------------- indentSpaces (indentacao por nivel)
+
+    @Test
+    void saveELoad_fazemRoundTripDoIndentSpaces(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        TimeTakerCore.Settings s = defaults(tmp.toString());
+        s.indentSpaces = 12;
+        TimeTakerCore.saveSettings(cfg, s);
+
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertEquals(12, r.indentSpaces);
+    }
+
+    @Test
+    void loadSettings_semChaveIndentSpacesMantemDefault(@TempDir Path tmp) throws Exception {
+        // Ausencia de indent.spaces mantem o default (0 aqui), sem quebrar o load.
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "font.size=14\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertEquals(0, r.indentSpaces);
+    }
+
+    @Test
+    void loadSettings_indentSpacesAcimaDoMaximoSofreClamp(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "indent.spaces=999\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertEquals(32, r.indentSpaces); // clamp no maximo
+    }
+
+    @Test
+    void loadSettings_indentSpacesNegativoSofreClamp(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "indent.spaces=-5\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertEquals(0, r.indentSpaces); // clamp no minimo
+    }
+
+    // ----------------------------------------------------- headingSectionLevel
+
+    @Test
+    void headingSectionLevel_preambuloSemTituloAcimaRetornaZero() {
+        String text = "linha de preambulo\noutra linha\n* Projeto\ncorpo\n";
+        assertEquals(0, TimeTakerCore.headingSectionLevel(text, 0));
+        assertEquals(0, TimeTakerCore.headingSectionLevel(text, text.indexOf("outra")));
+    }
+
+    @Test
+    void headingSectionLevel_corpoSobTituloNivel1() {
+        String text = "* Projeto\ncorpo do projeto\n";
+        assertEquals(1, TimeTakerCore.headingSectionLevel(text, text.indexOf("corpo")));
+        // A propria linha do cabecalho tambem conta.
+        assertEquals(1, TimeTakerCore.headingSectionLevel(text, 0));
+    }
+
+    @Test
+    void headingSectionLevel_corpoSobTituloMaisProfundo() {
+        String text = "* Projeto\n** Sub\ncorpo\n*** SubSub\nfundo\n";
+        assertEquals(2, TimeTakerCore.headingSectionLevel(text, text.indexOf("corpo")));
+        assertEquals(3, TimeTakerCore.headingSectionLevel(text, text.indexOf("fundo")));
+    }
+
+    @Test
+    void headingSectionLevel_tituloNaUltimaLinhaSemQuebra() {
+        // Cabecalho na ultima linha sem '\n' final: ramo de fim de texto.
+        String text = "preambulo\n## Titulo final";
+        assertEquals(2, TimeTakerCore.headingSectionLevel(text, text.length()));
     }
 
     // ----------------------------------------------------- I/O de arquivo
