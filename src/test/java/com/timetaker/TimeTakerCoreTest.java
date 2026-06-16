@@ -1005,7 +1005,7 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- Settings load/save
 
     private static TimeTakerCore.Settings defaults(String dir) {
-        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false, false, 0, true);
+        return new TimeTakerCore.Settings("Monospaced", 13, dir, 1000, 700, -1, -1, null, false, false, 0, true, true);
     }
 
     @Test
@@ -1088,7 +1088,7 @@ class TimeTakerCoreTest {
         Files.createDirectory(docs);
         File cfg = tmp.resolve("out.properties").toFile();
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
-                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true, true, 7, false);
+                "Arial", 18, docs.toAbsolutePath().toString(), 1234, 876, 5, 6, null, true, true, 7, false, false);
         TimeTakerCore.saveSettings(cfg, s);
         assertTrue(cfg.isFile());
 
@@ -1104,6 +1104,7 @@ class TimeTakerCoreTest {
         assertTrue(r.colorizeHeadings);
         assertEquals(7, r.indentSpaces);
         assertFalse(r.wordWrap);
+        assertFalse(r.indentHeadings);
     }
 
     @Test
@@ -1928,5 +1929,25 @@ class TimeTakerCoreTest {
         Files.write(cfg.toPath(), "font.size=20\n".getBytes(StandardCharsets.UTF_8));
         TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
         assertTrue(r.wordWrap);
+    }
+
+    @Test
+    void saveELoad_fazemRoundTripDoIndentHeadings(@TempDir Path tmp) throws Exception {
+        File cfg = tmp.resolve("out.properties").toFile();
+        TimeTakerCore.Settings s = defaults(tmp.toString());
+        s.indentHeadings = false;
+        TimeTakerCore.saveSettings(cfg, s);
+
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertFalse(r.indentHeadings);
+    }
+
+    @Test
+    void loadSettings_semChaveIndentHeadingsMantemDefault(@TempDir Path tmp) throws Exception {
+        // Ausencia de indent.headings mantem o default (true aqui).
+        File cfg = tmp.resolve("timetaker.properties").toFile();
+        Files.write(cfg.toPath(), "font.size=20\n".getBytes(StandardCharsets.UTF_8));
+        TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
+        assertTrue(r.indentHeadings);
     }
 }

@@ -1499,11 +1499,12 @@ public final class TimeTakerCore {
         public boolean colorizeHeadings; // colorir titulos com uma cor diferente por nivel
         public int indentSpaces; // espacos de indentacao visual por nivel de titulo (0 = desligado)
         public boolean wordWrap; // quebra de linha suave (apenas visual; nao altera o conteudo)
+        public boolean indentHeadings; // liga/desliga o recuo proporcional dos itens por nivel de titulo
 
         public Settings(String fontName, int fontSize, String defaultDir,
                         int winWidth, int winHeight, int winX, int winY,
                         String lastFile, boolean showHidden, boolean colorizeHeadings,
-                        int indentSpaces, boolean wordWrap) {
+                        int indentSpaces, boolean wordWrap, boolean indentHeadings) {
             this.fontName = fontName;
             this.fontSize = fontSize;
             this.defaultDir = defaultDir;
@@ -1516,6 +1517,7 @@ public final class TimeTakerCore {
             this.colorizeHeadings = colorizeHeadings;
             this.indentSpaces = indentSpaces;
             this.wordWrap = wordWrap;
+            this.indentHeadings = indentHeadings;
         }
     }
 
@@ -1566,6 +1568,8 @@ public final class TimeTakerCore {
                 parseIntOr(p.getProperty("indent.spaces"), defaults.indentSpaces)));
         defaults.wordWrap = Boolean.parseBoolean(
                 p.getProperty("word.wrap", String.valueOf(defaults.wordWrap)));
+        defaults.indentHeadings = Boolean.parseBoolean(
+                p.getProperty("indent.headings", String.valueOf(defaults.indentHeadings)));
         return defaults;
     }
 
@@ -1586,6 +1590,7 @@ public final class TimeTakerCore {
         p.setProperty("colorize.headings", String.valueOf(s.colorizeHeadings));
         p.setProperty("indent.spaces", String.valueOf(s.indentSpaces));
         p.setProperty("word.wrap", String.valueOf(s.wordWrap));
+        p.setProperty("indent.headings", String.valueOf(s.indentHeadings));
         try (OutputStream out = Files.newOutputStream(cfg.toPath())) {
             p.store(out, "Configuracoes do TimeTaker");
         }

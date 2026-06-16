@@ -112,6 +112,11 @@ public class TimeTakerApp extends JFrame {
     // nunca o conteudo salvo em disco. Lido pela FoldableParagraphView ao pintar.
     private int indentSpaces;
 
+    // Liga/desliga o recuo proporcional dos itens por nivel de titulo (persistido em
+    // indent.headings). Separado de indentSpaces: o valor numerico e preservado mesmo
+    // com a flag desligada. Quando desligada, nao ha recuo, independentemente de indentSpaces.
+    private boolean indentHeadings = true;
+
     // Quebra de linha suave (word wrap). Apenas visual: quando desligado, as linhas
     // se estendem horizontalmente com rolagem. Nunca altera o conteudo salvo em disco.
     private boolean wordWrap = true;
@@ -1037,7 +1042,7 @@ public class TimeTakerApp extends JFrame {
          * indentacao esta desligada ou o paragrafo nao esta sob nenhum titulo.
          */
         private int indentPixels(Graphics g) {
-            if (indentSpaces <= 0) {
+            if (!indentHeadings || indentSpaces <= 0) {
                 return 0;
             }
             int level;
@@ -1119,6 +1124,9 @@ public class TimeTakerApp extends JFrame {
         // --- Colorir titulos por nivel ---
         JCheckBox colorizeBox = new JCheckBox("Colorir titulos por nivel", colorizeHeadings);
 
+        // --- Recuar itens por nivel de titulo ---
+        JCheckBox indentBox = new JCheckBox("Recuar itens por nivel", indentHeadings);
+
         // --- Quebra de linha suave (word wrap) ---
         JCheckBox wrapBox = new JCheckBox("Quebra de linha automatica", wordWrap);
 
@@ -1155,6 +1163,9 @@ public class TimeTakerApp extends JFrame {
         c.gridx = 1; c.gridy = 4; c.weightx = 1;
         form.add(wrapBox, c);
 
+        c.gridx = 1; c.gridy = 5; c.weightx = 1;
+        form.add(indentBox, c);
+
         int result = JOptionPane.showConfirmDialog(this, form, "Configuracoes",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) {
@@ -1168,6 +1179,7 @@ public class TimeTakerApp extends JFrame {
 
         // Indentacao e apenas visual: aplica e redesenha sem tocar no documento.
         indentSpaces = (Integer) indentSpinner.getValue();
+        indentHeadings = indentBox.isSelected();
         textArea.repaint();
 
         File chosenDir = new File(dirField.getText().trim());
@@ -1213,7 +1225,7 @@ public class TimeTakerApp extends JFrame {
     private void loadSettings() {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 Font.MONOSPACED, 13, documentsDir().getAbsolutePath(),
-                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, false, 0, true);
+                DEFAULT_WIDTH, DEFAULT_HEIGHT, -1, -1, null, false, false, 0, true, true);
         s = TimeTakerCore.loadSettings(settingsFile(), s);
 
         fontName = s.fontName;
@@ -1228,6 +1240,7 @@ public class TimeTakerApp extends JFrame {
         colorizeHeadings = s.colorizeHeadings;
         indentSpaces = s.indentSpaces;
         wordWrap = s.wordWrap;
+        indentHeadings = s.indentHeadings;
     }
 
     private void saveSettings() {
@@ -1237,7 +1250,7 @@ public class TimeTakerApp extends JFrame {
         TimeTakerCore.Settings s = new TimeTakerCore.Settings(
                 fontName, fontSize, defaultDir.getAbsolutePath(),
                 winWidth, winHeight, winX, winY, lastFilePath, showHidden,
-                colorizeHeadings, indentSpaces, wordWrap);
+                colorizeHeadings, indentSpaces, wordWrap, indentHeadings);
         try {
             TimeTakerCore.saveSettings(settingsFile(), s);
         } catch (IOException ex) {
