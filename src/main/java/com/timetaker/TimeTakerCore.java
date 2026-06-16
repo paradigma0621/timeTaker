@@ -1194,15 +1194,23 @@ public final class TimeTakerCore {
             Pattern.compile("(\\d{4})-(\\d{2})-(\\d{2}) (dom|seg|ter|qua|qui|sex|sab)");
 
     /**
-     * Desloca em {@code delta} dias a DATA do token "yyyy-MM-dd ddd" sob o caret (Ctrl+Up = +1,
-     * Ctrl+Down = -1). Localiza o token cujos caracteres contem ou encostam o caret (regiao
-     * {@code [inicio, fim]}, inclusive nas duas pontas), atualizando JUNTOS o "yyyy-MM-dd" e a
-     * abreviacao do dia da semana (recomputada via {@link #weekdayPt(int)}). O token tem largura
-     * fixa (10 + 1 + 3 = 14 caracteres), entao o cursor permanece na mesma posicao. Apos o ajuste,
-     * recalcula as duracoes ({@link #recalculateDurations}) para manter as horas relativas
-     * consistentes. A regiao da data nao se sobrepoe a do horario "HH:mm" (separados por um espaco),
-     * de modo que {@link #adjustTimeField} continua tratando o "HH:mm". Retorna {@code null} (no-op)
-     * quando o caret nao esta sobre uma data/dia da semana. Funcao pura.
+     * Desloca em {@code delta} a DATA do token "yyyy-MM-dd ddd" sob o caret (Ctrl+Up = +1,
+     * Ctrl+Down = -1), de forma SENSIVEL AO CAMPO sob o cursor: caret sobre o ano (yyyy) desloca
+     * por ANO, sobre o mes (mm) por MES, sobre o dia (dd) por DIA e sobre a abreviacao do dia da
+     * semana (ddd) tambem por DIA. Localiza o token cujos caracteres contem ou encostam o caret
+     * (regiao {@code [inicio, fim]}, inclusive nas duas pontas) e usa {@link Calendar#add} com o
+     * campo apropriado ({@link Calendar#YEAR}/{@link Calendar#MONTH}/{@link Calendar#DAY_OF_MONTH}),
+     * de modo que overflow normaliza corretamente (ex.: 2024-01-31 +1 mes = 2024-02-29). Atualiza
+     * JUNTOS o "yyyy-MM-dd" e a abreviacao do dia da semana (recomputada via {@link #weekdayPt(int)}).
+     *
+     * <p>O segmento sob o caret e decidido pelo deslocamento {@code off = caret - inicio} dentro do
+     * token de largura fixa (10 + 1 + 3 = 14): {@code off <= 4} (yyyy + hifen seguinte) -> ano;
+     * {@code off <= 7} (mm + hifen seguinte) -> mes; caso contrario (dd e ddd) -> dia. Como o token
+     * tem largura fixa, o cursor permanece na mesma posicao. Apos o ajuste, recalcula as duracoes
+     * ({@link #recalculateDurations}) para manter as horas relativas consistentes. A regiao da data
+     * nao se sobrepoe a do horario "HH:mm" (separados por um espaco), de modo que
+     * {@link #adjustTimeField} continua tratando o "HH:mm". Retorna {@code null} (no-op) quando o
+     * caret nao esta sobre uma data/dia da semana. Funcao pura.
      */
     public static TextEdit adjustDateField(String text, int caret, int delta) {
         if (text == null) {
@@ -1216,12 +1224,21 @@ public final class TimeTakerCore {
             if (caret < start || caret > end) {
                 continue;
             }
+            int off = caret - start; // 0..14 dentro de "yyyy-MM-dd ddd"
+            int field;
+            if (off <= 4) {
+                field = Calendar.YEAR;          // yyyy (e o hifen seguinte)
+            } else if (off <= 7) {
+                field = Calendar.MONTH;         // mm (e o hifen seguinte)
+            } else {
+                field = Calendar.DAY_OF_MONTH;  // dd e a abreviacao do dia da semana (ddd)
+            }
             Calendar cal = Calendar.getInstance();
             cal.clear();
             cal.set(Integer.parseInt(m.group(1)),
                     Integer.parseInt(m.group(2)) - 1,
                     Integer.parseInt(m.group(3)));
-            cal.add(Calendar.DAY_OF_MONTH, delta);
+            cal.add(field, delta);
             String replacement = formatDay(cal); // "yyyy-MM-dd ddd" com o dia da semana recomputado
             String updated = text.substring(0, start) + replacement + text.substring(end);
             return new TextEdit(recalculateDurations(updated), caret);

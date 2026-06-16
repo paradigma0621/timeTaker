@@ -1437,12 +1437,31 @@ class TimeTakerCoreTest {
     // ----------------------------------------------------- adjustDateField (Ctrl+Up/Down na data)
 
     @Test
-    void adjustDateField_caretSobreData_incrementaUmDia() {
+    void adjustDateField_caretSobreDia_incrementaUmDia() {
         String text = "CLOCK: [2021-11-16 ter 17:50]";
         int d = text.indexOf("2021-11-16");
-        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 2, 1);
+        // off = 9 -> ultimo digito do "dd" -> desloca por DIA.
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 9, 1);
         assertEquals("CLOCK: [2021-11-17 qua 17:50]", e.text);
-        assertEquals(d + 2, e.caret);
+        assertEquals(d + 9, e.caret);
+    }
+
+    @Test
+    void adjustDateField_caretSobreMes_incrementaUmMes() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int d = text.indexOf("2021-11-16");
+        // off = 6 -> sobre o "mm" -> desloca por MES; o dia da semana e recomputado.
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 6, 1);
+        assertEquals("CLOCK: [2021-12-16 qui 17:50]", e.text);
+    }
+
+    @Test
+    void adjustDateField_caretSobreAno_incrementaUmAno() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int d = text.indexOf("2021-11-16");
+        // off = 2 -> sobre o "yyyy" -> desloca por ANO.
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 2, 1);
+        assertEquals("CLOCK: [2022-11-16 qua 17:50]", e.text);
     }
 
     @Test
@@ -1450,30 +1469,49 @@ class TimeTakerCoreTest {
         String text = "CLOCK: [2021-11-16 ter 17:50]";
         int w = text.indexOf("ter");
         TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, w + 1, -1);
-        // 2021-11-16 (ter) - 1 dia = 2021-11-15 (seg)
+        // Sobre "ddd" mantem o comportamento por DIA: 2021-11-16 (ter) - 1 dia = 2021-11-15 (seg)
         assertEquals("CLOCK: [2021-11-15 seg 17:50]", e.text);
     }
 
     @Test
-    void adjustDateField_viradaDeMes() {
-        String text = "CLOCK: [2021-11-30 ter 09:00]";
-        int d = text.indexOf("2021-11-30");
-        assertEquals("CLOCK: [2021-12-01 qua 09:00]",
-                TimeTakerCore.adjustDateField(text, d, 1).text);
+    void adjustDateField_overflowDeMes_normaliza() {
+        // 2024-01-31 +1 mes nao existe "31" em fevereiro -> Calendar normaliza para 2024-02-29.
+        String text = "CLOCK: [2024-01-31 qua 09:00]";
+        int d = text.indexOf("2024-01-31");
+        assertEquals("CLOCK: [2024-02-29 qui 09:00]",
+                TimeTakerCore.adjustDateField(text, d + 6, 1).text);
     }
 
     @Test
-    void adjustDateField_viradaDeAno() {
+    void adjustDateField_diaViradaDeMes() {
+        String text = "CLOCK: [2021-11-30 ter 09:00]";
+        int d = text.indexOf("2021-11-30");
+        // off = 9 -> "dd" -> +1 dia atravessa o mes.
+        assertEquals("CLOCK: [2021-12-01 qua 09:00]",
+                TimeTakerCore.adjustDateField(text, d + 9, 1).text);
+    }
+
+    @Test
+    void adjustDateField_diaViradaDeAno() {
         String text = "CLOCK: [2021-12-31 sex 09:00]";
         int d = text.indexOf("2021-12-31");
-        // +1 dia atravessa o ano: 2022-01-01 (sab)
+        // off = 9 -> "dd" -> +1 dia atravessa o ano: 2022-01-01 (sab)
         assertEquals("CLOCK: [2022-01-01 sab 09:00]",
-                TimeTakerCore.adjustDateField(text, d, 1).text);
+                TimeTakerCore.adjustDateField(text, d + 9, 1).text);
         // -1 dia volta o ano: 2020-12-31 (qui) a partir de 2021-01-01 (sex)
         String t2 = "CLOCK: [2021-01-01 sex 09:00]";
         int d2 = t2.indexOf("2021-01-01");
         assertEquals("CLOCK: [2020-12-31 qui 09:00]",
-                TimeTakerCore.adjustDateField(t2, d2, -1).text);
+                TimeTakerCore.adjustDateField(t2, d2 + 9, -1).text);
+    }
+
+    @Test
+    void adjustDateField_anoDelta_negativo() {
+        String text = "CLOCK: [2021-11-16 ter 17:50]";
+        int d = text.indexOf("2021-11-16");
+        // off = 0 -> "yyyy" -> -1 ano.
+        assertEquals("CLOCK: [2020-11-16 seg 17:50]",
+                TimeTakerCore.adjustDateField(text, d, -1).text);
     }
 
     @Test
@@ -1481,7 +1519,7 @@ class TimeTakerCoreTest {
         // Deslocar a data da SAIDA em +1 dia adiciona 24h a duracao; a relativa e recalculada.
         String text = "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28";
         int d = text.lastIndexOf("2021-11-16");
-        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 2, 1);
+        TimeTakerCore.TextEdit e = TimeTakerCore.adjustDateField(text, d + 9, 1);
         assertEquals("CLOCK: [2021-11-16 ter 17:50]--[2021-11-17 qua 18:18] =>  24:28", e.text);
     }
 
@@ -1504,15 +1542,23 @@ class TimeTakerCoreTest {
     }
 
     @Test
-    void adjustDateField_fronteirasInclusivas() {
+    void adjustDateField_fronteirasDosCampos() {
         String text = "CLOCK: [2021-11-16 ter 17:50]";
-        int start = text.indexOf("2021-11-16");
-        int end = start + "2021-11-16 ter".length(); // logo apos "ter"
-        // Caret encostado no inicio da data e logo apos o dia da semana ainda contam.
-        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, start, 1).text);
-        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, end, 1).text);
+        int s = text.indexOf("2021-11-16"); // inicio do token "yyyy-MM-dd ddd"
+        // off 0 (inicio) e off 4 (sobre o primeiro hifen) -> ANO.
+        assertEquals("CLOCK: [2022-11-16 qua 17:50]", TimeTakerCore.adjustDateField(text, s, 1).text);
+        assertEquals("CLOCK: [2022-11-16 qua 17:50]", TimeTakerCore.adjustDateField(text, s + 4, 1).text);
+        // off 5 e off 7 (sobre o segundo hifen) -> MES.
+        assertEquals("CLOCK: [2021-12-16 qui 17:50]", TimeTakerCore.adjustDateField(text, s + 5, 1).text);
+        assertEquals("CLOCK: [2021-12-16 qui 17:50]", TimeTakerCore.adjustDateField(text, s + 7, 1).text);
+        // off 8, off 10 (sobre o espaco) e off 11 (inicio do "ddd") -> DIA.
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, s + 8, 1).text);
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, s + 10, 1).text);
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, s + 11, 1).text);
+        // off 14 (logo apos "ter", fim do token) ainda conta como DIA.
+        assertEquals("CLOCK: [2021-11-17 qua 17:50]", TimeTakerCore.adjustDateField(text, s + 14, 1).text);
         // Um caractere alem do dia da semana (o espaco antes do HH:mm) ja nao conta.
-        assertNull(TimeTakerCore.adjustDateField(text, end + 1, 1));
+        assertNull(TimeTakerCore.adjustDateField(text, s + 15, 1));
     }
 
     // ----------------------------------------------------- Diff minimo (applyEdit/Ctrl+Z)

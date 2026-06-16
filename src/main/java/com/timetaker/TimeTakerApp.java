@@ -274,7 +274,8 @@ public class TimeTakerApp extends JFrame {
                 KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.SHIFT_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "coffee", this::insertCoffee);
 
-        // CTRL+UP / CTRL+DOWN -> ajusta a hora ou o minuto do "HH:mm" sob o cursor.
+        // CTRL+UP / CTRL+DOWN -> ajusta o campo sob o cursor: ano/mes/dia da data
+        // "yyyy-MM-dd ddd" (conforme o segmento) ou a hora/minuto do "HH:mm".
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_UP, menuMask),
                 "adjustTimeUp", () -> adjustTimeField(1));
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, menuMask),
@@ -707,16 +708,19 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
-     * Ctrl+Up / Ctrl+Down: ajusta em {@code delta} a hora ou o minuto do horario "HH:mm" sob o
-     * cursor (o campo depende de o cursor estar sobre "HH" ou "mm"). Delega a logica pura a
-     * {@link TimeTakerCore#adjustTimeField}; se o cursor nao estiver sobre um "HH:mm", e um
-     * no-op silencioso. A edicao passa por {@link #applyEdit}, sendo desfazivel com Ctrl+Z.
+     * Ctrl+Up / Ctrl+Down: ajusta em {@code delta} o campo sob o cursor. Sobre a data
+     * "yyyy-MM-dd ddd" desloca ano, mes ou dia conforme o segmento (o dia da semana tambem por
+     * dia), via {@link TimeTakerCore#adjustDateField}; sobre o horario "HH:mm" ajusta a hora ou o
+     * minuto (conforme "HH" ou "mm"), via {@link TimeTakerCore#adjustTimeField}. Se o cursor nao
+     * estiver sobre nenhum desses campos, e um no-op silencioso. A edicao passa por
+     * {@link #applyEdit}, sendo desfazivel com Ctrl+Z.
      */
     private void adjustTimeField(int delta) {
         String text = textArea.getText();
         int caret = textArea.getCaretPosition();
-        // Sobre a data/dia da semana ("yyyy-MM-dd ddd") desloca o dia; sobre "HH:mm" ajusta a
-        // hora/minuto. As regioes nao se sobrepoem, entao basta tentar a data primeiro.
+        // Sobre a data "yyyy-MM-dd ddd" desloca o campo sob o cursor (ano/mes/dia; o dia da
+        // semana tambem por dia); sobre "HH:mm" ajusta a hora/minuto. As regioes nao se
+        // sobrepoem, entao basta tentar a data primeiro.
         TimeTakerCore.TextEdit edit = TimeTakerCore.adjustDateField(text, caret, delta);
         if (edit == null) {
             edit = TimeTakerCore.adjustTimeField(text, caret, delta);
@@ -1286,7 +1290,8 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+I         Entrada: insere CLOCK no projeto do cursor\n"
                         + "                 (ou no final do arquivo, sem projeto)\n"
                         + "  Ctrl+O         Saida: fecha o CLOCK em aberto com horario e duracao\n"
-                        + "  Ctrl+Up/Down   Ajusta a hora ou o minuto do HH:mm sob o cursor\n"
+                        + "  Ctrl+Up/Down   Ajusta o campo sob o cursor: ano/mes/dia da data\n"
+                        + "                 yyyy-MM-dd ddd ou a hora/minuto do HH:mm\n"
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+T         Relatorio de tempo por projeto\n"
                         + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
