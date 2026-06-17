@@ -380,6 +380,36 @@ public final class TimeTakerCore {
     }
 
     /**
+     * Indica se o {@code text} possui ao menos um registro CLOCK em aberto: uma linha com
+     * "CLOCK: [...]" cujo horario de entrada ja foi fechado com ']' mas que ainda NAO recebeu
+     * o "--[" de saida. Usado para descobrir se outro arquivo (lido do disco) ainda esta em
+     * clock-in. Funcao pura: nao altera nada externo.
+     */
+    public static boolean hasOpenClock(String text) {
+        if (text == null) {
+            return false;
+        }
+        int lineEnd = text.length();
+        while (true) {
+            int lineStart = text.lastIndexOf('\n', lineEnd - 1) + 1;
+            String line = text.substring(lineStart, lineEnd);
+            int idx = line.indexOf(CLOCK_OPEN);
+            if (idx >= 0) {
+                int openBracket = idx + CLOCK_OPEN.length() - 1; // indice do '[' na linha
+                int closeBracket = line.indexOf(']', openBracket);
+                if (closeBracket >= 0 && !line.startsWith("--[", closeBracket + 1)) {
+                    return true; // entrada sem horario de saida: registro em aberto
+                }
+            }
+            if (lineStart == 0) {
+                break;
+            }
+            lineEnd = lineStart - 1; // pula o '\n' da linha anterior
+        }
+        return false;
+    }
+
+    /**
      * Logica do Ctrl+I: se houver uma tarefa em aberto, fecha-a silenciosamente com
      * {@code now}; em seguida garante quebra de linha e anexa um novo registro de
      * entrada "CLOCK: [now] ". O cursor fica no fim do documento.
