@@ -27,8 +27,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * TimeTaker - editor de markdown minimalista voltado a registro de tempo (clock-in).
@@ -57,6 +60,22 @@ public class TimeTakerApp extends JFrame {
         }
     };
     private File currentFile;
+
+    /**
+     * Arquivos onde, nesta sessao, o usuario iniciou um clock-in que (ate onde sabemos) ainda
+     * nao foi fechado. Como o registro CLOCK fica salvo no proprio arquivo em disco, ao iniciar
+     * um novo clock-in em outro arquivo consultamos este conjunto para avisar que ha um clock-in
+     * aberto alhures. Um arquivo sai daqui ao ser fechado (Ctrl+O ou pela acao do menu) ou quando
+     * descobrimos, lendo o disco, que ja nao tem registro em aberto.
+     */
+    private final Set<File> openClockFiles = new HashSet<>();
+
+    /**
+     * Arquivos com clock-in aberto que o usuario optou por IGNORAR ao iniciar um clock-in em
+     * outro arquivo. Persistido em memoria por toda a sessao para nao reperguntar sobre o mesmo
+     * arquivo em futuros inicios de clock-in.
+     */
+    private final Set<File> ignoredOpenClockFiles = new HashSet<>();
 
     /** Historico de undo/redo das edicoes do textArea (logica em {@link UndoController}). */
     private UndoController undoController;
@@ -623,9 +642,96 @@ public class TimeTakerApp extends JFrame {
      * fim do arquivo. Delega a transformacao de texto para {@link TimeTakerCore}.
      */
     private void insertClockLine() {
+        // Antes de abrir uma nova entrada, resolve clock-ins ainda abertos em OUTROS arquivos
+        // (fechar o antigo / ignorar / cancelar). Se o usuario cancelar, o clock-in nao ocorre.
+        if (!resolveOtherOpenClocks()) {
+            return;
+        }
         TimeTakerCore.TextEdit edit = TimeTakerCore.insertClockLine(
                 textArea.getText(), textArea.getCaretPosition(), TimeTakerCore.nowToMinute());
         applyEdit(edit.text, edit.caret);
+        // Passa a rastrear o arquivo atual como portador de um clock-in aberto.
+        if (currentFile != null && TimeTakerCore.hasOpenClock(textArea.getText())) {
+            openClockFiles.add(currentFile);
+        }
+    }
+
+    /**
+     * Verifica se ha clock-in aberto em algum OUTRO arquivo (rastreado nesta sessao) e, para
+     * cada um, pergunta ao usuario o que fazer: (1) fechar o clock-in do arquivo antigo — em
+     * disco — antes de iniciar neste; (2) ignorar e iniciar mesmo assim (e nao perguntar mais
+     * sobre aquele arquivo); ou (3) cancelar o clock-in. Retorna {@code true} para prosseguir
+     * com o clock-in, ou {@code false} se o usuario cancelou.
+     */
+    private boolean resolveOtherOpenClocks() {
+        for (File f : new ArrayList<>(openClockFiles)) {
+            // O arquivo atual e tratado normalmente pelo proprio insertClockLine do nucleo
+            // (que fecha eventual clock aberto antes de abrir o novo); arquivos ja ignorados
+            // nao geram nova pergunta.
+            if (f.equals(currentFile) || ignoredOpenClockFiles.contains(f)) {
+                continue;
+            }
+            String diskText;
+            try {
+                diskText = TimeTakerCore.readFile(f);
+            } catch (IOException ex) {
+                openClockFiles.remove(f); // arquivo inacessivel: para de rastrear
+                continue;
+            }
+            // Confirma no disco que o clock-in realmente continua aberto; se ja foi fechado
+            // por fora, apenas para de rastrear sem incomodar o usuario.
+            if (!TimeTakerCore.hasOpenClock(diskText)) {
+                openClockFiles.remove(f);
+                continue;
+            }
+
+            String[] opcoes = {
+                    "Fechar o clock-in do outro arquivo",
+                    "Ignorar e iniciar mesmo assim",
+                    "Cancelar"
+            };
+            int r = JOptionPane.showOptionDialog(this,
+                    "Ja existe um clock-in aberto em outro arquivo:\n"
+                            + f.getAbsolutePath() + "\n\nO que deseja fazer?",
+                    "Clock-in em outro arquivo",
+                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
+                    null, opcoes, opcoes[0]);
+            if (r == 0) {
+                // Fecha o CLOCK aberto do arquivo antigo (em disco) e deixa de rastrea-lo.
+                if (closeClockInFile(f, diskText)) {
+                    openClockFiles.remove(f);
+                }
+            } else if (r == 1) {
+                // Ignora este arquivo agora e nao pergunta mais sobre ele nesta sessao.
+                ignoredOpenClockFiles.add(f);
+            } else {
+                return false; // Cancelar ou fechar o dialogo: aborta o clock-in.
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Fecha o ultimo CLOCK em aberto de {@code diskText} (conteudo ja lido de {@code f}) e grava
+     * o resultado de volta no arquivo em disco. Retorna {@code true} se o registro foi fechado e
+     * salvo com sucesso.
+     */
+    private boolean closeClockInFile(File f, String diskText) {
+        TimeTakerCore.CloseResult res =
+                TimeTakerCore.closeOpenClock(diskText, TimeTakerCore.nowToMinute());
+        if (!res.closed()) {
+            return false;
+        }
+        try {
+            TimeTakerCore.writeFile(f, res.text);
+            return true;
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Erro ao fechar o clock-in do arquivo:\n" + f.getAbsolutePath()
+                            + "\n" + ex.getMessage(),
+                    "Clock-in em outro arquivo", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
     }
 
     /**
@@ -662,6 +768,10 @@ public class TimeTakerApp extends JFrame {
                 return;
             default: // CLOSED
                 applyEdit(r.text, r.caret);
+                // Se o arquivo atual nao tem mais nenhum CLOCK em aberto, deixa de rastrea-lo.
+                if (currentFile != null && !TimeTakerCore.hasOpenClock(textArea.getText())) {
+                    openClockFiles.remove(currentFile);
+                }
         }
     }
 
