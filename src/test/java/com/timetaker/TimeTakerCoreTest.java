@@ -269,6 +269,45 @@ class TimeTakerCoreTest {
         assertEquals(TimeTakerCore.CloseStatus.ALREADY_CLOSED, r.status);
     }
 
+    // ----------------------------------------------------- hasOpenClock
+
+    @Test
+    void hasOpenClock_textoNulo() {
+        assertFalse(TimeTakerCore.hasOpenClock(null));
+    }
+
+    @Test
+    void hasOpenClock_textoVazio() {
+        // Nao nulo, sem '\n' e sem CLOCK: cobre a unica iteracao com break na primeira linha.
+        assertFalse(TimeTakerCore.hasOpenClock(""));
+    }
+
+    @Test
+    void hasOpenClock_registroAberto() {
+        assertTrue(TimeTakerCore.hasOpenClock("CLOCK: [2021-11-16 ter 17:50]"));
+    }
+
+    @Test
+    void hasOpenClock_registroFechado() {
+        // Entrada com saida "--[": nao conta como aberto.
+        String text = "CLOCK: [2021-11-16 ter 17:50]--[2021-11-16 ter 18:18] =>  0:28";
+        assertFalse(TimeTakerCore.hasOpenClock(text));
+    }
+
+    @Test
+    void hasOpenClock_registroMalformadoSemColchete() {
+        // "CLOCK: [" sem o ']' de fechamento: nao ha entrada fechada, logo nao esta "aberto".
+        assertFalse(TimeTakerCore.hasOpenClock("CLOCK: [2021-11-16 ter 17:50"));
+    }
+
+    @Test
+    void hasOpenClock_abertoAcimaDeLinhaSemClock() {
+        // Varre de tras para frente: a ultima linha nao tem CLOCK e nao e a primeira,
+        // entao a busca continua e encontra o registro aberto acima.
+        String text = "CLOCK: [2021-11-16 ter 17:50]\nanotacao qualquer";
+        assertTrue(TimeTakerCore.hasOpenClock(text));
+    }
+
     // ----------------------------------------------------- insertClockLine
 
     @Test
