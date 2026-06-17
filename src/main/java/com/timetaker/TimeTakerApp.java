@@ -1020,28 +1020,30 @@ public class TimeTakerApp extends JFrame {
             if (flag(FOLD_BODY_KEY)) {
                 return; // corpo dobrado: nao desenha nada
             }
-            // Indentacao visual: desloca o desenho para a direita conforme o nivel do titulo
-            // que contem este paragrafo. So mexe no Graphics (nao no documento) e e revertido
-            // ao final para nao afetar a pintura dos demais paragrafos.
-            int indent = indentPixels(g);
-            if (indent != 0) {
-                g.translate(indent, 0);
-            }
             super.paint(g, a);
             if (flag(FOLD_HEAD_KEY)) {
                 paintEllipsis(g, a);
             }
-            if (indent != 0) {
-                g.translate(-indent, 0);
-            }
         }
 
         /**
-         * Deslocamento horizontal (em pixels) deste paragrafo: {@code nivel * indentSpaces}
-         * espacos, convertidos pela largura do espaco na fonte do editor. Zero quando a
-         * indentacao esta desligada ou o paragrafo nao esta sob nenhum titulo.
+         * Inset esquerdo do paragrafo, acrescido da indentacao visual por nivel de titulo.
+         * Sobrescrever {@code getLeftInset} (em vez de transladar o {@link Graphics} na pintura)
+         * faz com que o calculo de coordenadas da View — {@code modelToView}/{@code viewToModel} —
+         * tambem considere o deslocamento, mantendo o cursor e o texto digitado alinhados com o
+         * que e desenhado.
          */
-        private int indentPixels(Graphics g) {
+        @Override
+        protected short getLeftInset() {
+            return (short) (super.getLeftInset() + indentPixels());
+        }
+
+        /**
+         * Deslocamento horizontal (em pixels) deste paragrafo: {@code (nivel - 1) * indentSpaces}
+         * espacos, convertidos pela largura do espaco na fonte do editor — o nivel 1 nao recua.
+         * Zero quando a indentacao esta desligada ou o paragrafo nao esta sob nenhum titulo.
+         */
+        private int indentPixels() {
             if (!indentHeadings || indentSpaces <= 0) {
                 return 0;
             }
@@ -1052,13 +1054,15 @@ public class TimeTakerApp extends JFrame {
             } catch (BadLocationException ex) {
                 return 0;
             }
-            if (level <= 0) {
+            if (level <= 1) {
                 return 0;
             }
             Component c = getContainer();
-            FontMetrics fm = (c != null)
-                    ? g.getFontMetrics(c.getFont()) : g.getFontMetrics();
-            return level * indentSpaces * fm.charWidth(' ');
+            if (c == null) {
+                return 0;
+            }
+            FontMetrics fm = c.getFontMetrics(c.getFont());
+            return (level - 1) * indentSpaces * fm.charWidth(' ');
         }
 
         private void paintEllipsis(Graphics g, Shape a) {
