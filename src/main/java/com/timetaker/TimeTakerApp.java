@@ -27,8 +27,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 /**
  * TimeTaker - editor de markdown minimalista voltado a registro de tempo (clock-in).
@@ -57,6 +59,13 @@ public class TimeTakerApp extends JFrame {
         }
     };
     private File currentFile;
+
+    /**
+     * Arquivos abertos durante a sessao, na ordem da primeira abertura. Usado pelos
+     * atalhos ALT+1..ALT+9 para alternar rapidamente entre os arquivos ja visitados.
+     * Reabrir um arquivo ja presente mantem sua posicao original (sem duplicatas).
+     */
+    private final List<File> sessionFiles = new ArrayList<>();
 
     /** Historico de undo/redo das edicoes do textArea (logica em {@link UndoController}). */
     private UndoController undoController;
@@ -314,6 +323,14 @@ public class TimeTakerApp extends JFrame {
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, menuMask),
                 "fontSizeDownNumpad", () -> changeFontSize(-1));
 
+        // ALT+1..ALT+9 -> abre/foca o N-esimo arquivo aberto na sessao.
+        for (int n = 1; n <= 9; n++) {
+            final int index = n - 1;
+            registerGlobalShortcut(
+                    KeyStroke.getKeyStroke(KeyEvent.VK_1 + index, InputEvent.ALT_DOWN_MASK),
+                    "sessionFile" + n, () -> openSessionFile(index));
+        }
+
         return menuBar;
     }
 
@@ -494,6 +511,7 @@ public class TimeTakerApp extends JFrame {
                 // Mesmo sem disco, mantem o caminho como destino de salvamento.
                 currentFile = daily;
                 setTitle("TimeTaker - " + daily.getName());
+                rememberSessionFile(daily);
                 return;
             }
         }
@@ -592,6 +610,9 @@ public class TimeTakerApp extends JFrame {
             // Limpa o historico: nao faz sentido desfazer de volta ao conteudo anterior.
             undoController.discardHistory();
             modified = false; // conteudo recem-carregado do disco esta limpo
+            // Registra o arquivo na lista da sessao (sem duplicatas, mantendo a ordem
+            // de primeira abertura) para os atalhos ALT+1..ALT+9.
+            rememberSessionFile(file);
             // Registra e persiste o ultimo arquivo aberto para recarregar na proxima sessao.
             lastFile = file.getAbsolutePath();
             saveSettings();
@@ -600,6 +621,39 @@ public class TimeTakerApp extends JFrame {
                     "Erro ao abrir o arquivo:\n" + ex.getMessage(),
                     "TimeTaker", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    /**
+     * Adiciona o arquivo a lista da sessao caso ainda nao esteja presente, preservando
+     * a ordem de primeira abertura. A comparacao usa o caminho absoluto para evitar
+     * duplicatas quando o mesmo arquivo e reaberto por caminhos diferentes.
+     */
+    private void rememberSessionFile(File file) {
+        String path = file.getAbsolutePath();
+        for (File f : sessionFiles) {
+            if (f.getAbsolutePath().equals(path)) {
+                return; // ja registrado: mantem a posicao original
+            }
+        }
+        sessionFiles.add(file);
+    }
+
+    /**
+     * Abre/foca o arquivo de indice {@code index} (base 0) da lista de arquivos da
+     * sessao, acionado por ALT+1..ALT+9. Se o indice nao existir ou o arquivo ja for o
+     * atual, emite um beep discreto sem trocar nada.
+     */
+    private void openSessionFile(int index) {
+        if (index < 0 || index >= sessionFiles.size()) {
+            Toolkit.getDefaultToolkit().beep();
+            return;
+        }
+        File target = sessionFiles.get(index);
+        if (currentFile != null
+                && currentFile.getAbsolutePath().equals(target.getAbsolutePath())) {
+            return; // ja e o arquivo atual: nada a fazer
+        }
+        loadFile(target);
     }
 
     private void writeToDisk(File file) {
@@ -1318,7 +1372,8 @@ public class TimeTakerApp extends JFrame {
                         + "  Ctrl+E         Alterna: numera os topicos (1, 1.1, ...) ou remove a numeracao\n"
                         + "  Ctrl + / Ctrl -   Aumenta/diminui o tamanho da fonte\n"
                         + "  Ctrl+Z         Desfazer\n"
-                        + "  Ctrl+Shift+Z   Refazer\n\n"
+                        + "  Ctrl+Shift+Z   Refazer\n"
+                        + "  Alt+1..9       Abre o N-esimo arquivo aberto na sessao\n\n"
                         + "Projetos (estilo Org-mode): linhas \"* Nome\" ou \"# Nome\" criam\n"
                         + "secoes de projeto; Ctrl+I com o cursor numa secao registra a\n"
                         + "entrada no fim daquela secao, fechando antes qualquer tarefa\n"
