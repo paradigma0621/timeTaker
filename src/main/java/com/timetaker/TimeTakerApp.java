@@ -336,13 +336,14 @@ public class TimeTakerApp extends JFrame {
                 KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask | InputEvent.SHIFT_DOWN_MASK),
                 "expandAll", this::expandAllTopics);
 
-        // CTRL+ALT+C / CTRL+ALT+E -> colapsa / expande o topico atual e seus subtopicos.
-        registerGlobalShortcut(
-                KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.ALT_DOWN_MASK),
-                "collapseSubtree", this::collapseSubtree);
-        registerGlobalShortcut(
-                KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask | InputEvent.ALT_DOWN_MASK),
-                "expandSubtree", this::expandSubtree);
+        // CTRL+ALT+1..CTRL+ALT+9 -> alterna a dobra dos topicos de nivel N (colapsa se estiverem
+        // expandidos, expande se estiverem colapsados).
+        for (int n = 1; n <= 9; n++) {
+            final int level = n;
+            registerGlobalShortcut(
+                    KeyStroke.getKeyStroke(KeyEvent.VK_1 + (n - 1), menuMask | InputEvent.ALT_DOWN_MASK),
+                    "toggleFoldLevel" + n, () -> toggleFoldLevel(level));
+        }
 
         // CTRL+E -> (re)numera hierarquicamente os topicos (cabecalhos).
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask),
@@ -1086,37 +1087,38 @@ public class TimeTakerApp extends JFrame {
     }
 
     /**
-     * Ctrl+Alt+C: dobra o topico sob o cursor e todos os seus subtopicos; leva o cursor ao
-     * inicio do cabecalho atual. No-op se o cursor nao estiver sob cabecalho com corpo.
+     * Ctrl+Alt+N (N = 1..9): alterna a dobra de todos os topicos de nivel N. Se todos ja estiverem
+     * colapsados, expande-os; caso contrario, colapsa-os. No-op se nao houver topico dobravel nesse
+     * nivel. Ao colapsar, reposiciona o cursor caso ele caia numa linha que ficou oculta.
      */
-    private void collapseSubtree() {
-        String text = textArea.getText();
-        int caret = textArea.getCaretPosition();
-        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, caret);
+    private void toggleFoldLevel(int level) {
+        List<TimeTakerCore.FoldRegion> regions =
+                TimeTakerCore.foldRegionsAtLevel(textArea.getText(), level);
         if (regions.isEmpty()) {
             return;
         }
         StyledDocument doc = textArea.getStyledDocument();
+        boolean allFolded = true;
         for (TimeTakerCore.FoldRegion region : regions) {
-            applyFold(doc, region, true);
+            if (!isFolded(doc.getParagraphElement(region.bodyStart))) {
+                allFolded = false;
+                break;
+            }
         }
-        textArea.setCaretPosition(regions.get(0).headingStart);
-        textArea.revalidate();
-        textArea.repaint();
-    }
-
-    /**
-     * Ctrl+Alt+E: expande o topico sob o cursor e todos os seus subtopicos, limpando os atributos
-     * de dobra do cabecalho ate o fim do seu corpo. No-op se o cursor nao estiver sob cabecalho.
-     */
-    private void expandSubtree() {
-        TimeTakerCore.FoldRegion region =
-                TimeTakerCore.foldRegionFor(textArea.getText(), textArea.getCaretPosition());
-        if (region == null) {
-            return;
+        if (allFolded) {
+            for (TimeTakerCore.FoldRegion region : regions) {
+                clearFold(doc, region.headingStart, region.bodyEnd);
+            }
+        } else {
+            for (TimeTakerCore.FoldRegion region : regions) {
+                applyFold(doc, region, true);
+            }
+            int caret = Math.min(textArea.getCaretPosition(), doc.getLength());
+            Element par = doc.getParagraphElement(caret);
+            if (isFolded(par)) {
+                textArea.setCaretPosition(nearestVisibleOffset(doc, par, true));
+            }
         }
-        StyledDocument doc = textArea.getStyledDocument();
-        clearFold(doc, region.headingStart, region.bodyEnd);
         textArea.revalidate();
         textArea.repaint();
     }
@@ -1586,8 +1588,7 @@ public class TimeTakerApp extends JFrame {
                         + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
                         + "  Ctrl+Shift+C   Colapsa todos os topicos do documento\n"
                         + "  Ctrl+Shift+E   Expande todos os topicos do documento\n"
-                        + "  Ctrl+Alt+C     Colapsa o topico atual e seus subtopicos\n"
-                        + "  Ctrl+Alt+E     Expande o topico atual e seus subtopicos\n"
+                        + "  Ctrl+Alt+1..9  Alterna (colapsa/expande) os topicos de nivel 1..9\n"
                         + "  Ctrl+E         Alterna: numera os topicos (1, 1.1, ...) ou remove a numeracao\n"
                         + "  Ctrl + / Ctrl -   Aumenta/diminui o tamanho da fonte\n"
                         + "  Ctrl+Z         Desfazer\n"

@@ -926,29 +926,19 @@ public final class TimeTakerCore {
     }
 
     /**
-     * Regioes dobraveis do topico sob o caret e de TODOS os seus descendentes: uma
-     * {@link FoldRegion} para o cabecalho sob o caret (se tiver corpo) e para cada cabecalho mais
-     * profundo dentro do seu subtopico que tenha corpo dobravel, em ordem. Lista vazia se o caret
-     * nao estiver sob cabecalho algum ou se o cabecalho for a ultima linha (sem corpo). Usado pelo
-     * "colapsar o topico atual e seus subtopicos". Funcao pura.
+     * Regioes dobraveis de TODOS os cabecalhos com exatamente o nivel {@code level} (1-based) e
+     * que tenham corpo dobravel, em ordem. Cabecalhos de outros niveis, sem corpo ou na ultima
+     * linha sao ignorados. Lista vazia se nao houver nenhum. Usado pelo atalho Ctrl+Alt+N, que
+     * alterna a dobra dos topicos de nivel N. Funcao pura.
      */
-    public static List<FoldRegion> subtreeFoldRegions(String text, int caret) {
+    public static List<FoldRegion> foldRegionsAtLevel(String text, int level) {
         List<FoldRegion> regions = new ArrayList<>();
-        int headingStart = headingLineStartFor(text, caret);
-        if (headingStart < 0) {
-            return regions;
-        }
-        int headingEnd = text.indexOf('\n', headingStart);
-        if (headingEnd < 0) {
-            return regions; // cabecalho na ultima linha: sem corpo e sem descendentes
-        }
-        int level = headingLevel(text.substring(headingStart, headingEnd));
-        int end = subtreeEnd(text, headingEnd + 1, level);
-        int lineStart = headingStart;
-        while (lineStart < end) {
+        int len = text.length();
+        int lineStart = 0;
+        while (true) {
             int nl = text.indexOf('\n', lineStart);
-            int lineEnd = nl < 0 ? text.length() : nl;
-            if (isHeading(text.substring(lineStart, lineEnd))) {
+            int lineEnd = nl < 0 ? len : nl;
+            if (headingLevel(text.substring(lineStart, lineEnd)) == level) {
                 FoldRegion region = foldRegionFor(text, lineStart);
                 if (region != null) {
                     regions.add(region);

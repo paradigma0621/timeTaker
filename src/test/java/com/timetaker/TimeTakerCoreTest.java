@@ -2038,52 +2038,57 @@ class TimeTakerCoreTest {
         assertEquals(0, regions.get(0).headingStart);
     }
 
-    // ----------------------------------------------------- subtreeFoldRegions
+    // ----------------------------------------------------- foldRegionsAtLevel
 
     @Test
-    void subtreeFoldRegions_caretForaDeCabecalhoRetornaVazio() {
-        String text = "preambulo\n# A\nbody\n";
-        assertTrue(TimeTakerCore.subtreeFoldRegions(text, 0).isEmpty());
+    void foldRegionsAtLevel_textoVazioRetornaVazio() {
+        assertTrue(TimeTakerCore.foldRegionsAtLevel("", 1).isEmpty());
     }
 
     @Test
-    void subtreeFoldRegions_cabecalhoUltimaLinhaSemCorpoRetornaVazio() {
-        assertTrue(TimeTakerCore.subtreeFoldRegions("# A", 0).isEmpty());
+    void foldRegionsAtLevel_semCabecalhosDoNivel() {
+        // So ha nivel 1; pedir nivel 2 nao retorna nada.
+        String text = "# A\nbody\n# B\nbody\n";
+        assertTrue(TimeTakerCore.foldRegionsAtLevel(text, 2).isEmpty());
     }
 
     @Test
-    void subtreeFoldRegions_incluiCabecalhoEDescendentesAteIrmao() {
-        String text = "# A\nba\n## B\nbb\n### C\nbc\n# D\nbd\n";
-        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 1);
-        assertEquals(3, regions.size());
-        assertEquals(0, regions.get(0).headingStart);  // # A
-        assertEquals(7, regions.get(1).headingStart);  // ## B
-        assertEquals(15, regions.get(2).headingStart); // ### C
-        // O irmao de mesmo nivel "# D" fica de fora.
-        int dStart = text.indexOf("# D");
+    void foldRegionsAtLevel_umaPorCabecalhoDoNivelEmOrdem() {
+        String text = "# A\nba\n## B\nbb\n# C\nbc\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.foldRegionsAtLevel(text, 1);
+        assertEquals(2, regions.size());
+        assertEquals(0, regions.get(0).headingStart);                 // # A
+        assertEquals(text.indexOf("# C"), regions.get(1).headingStart); // # C
+        // O cabecalho de nivel 2 "## B" nao entra no nivel 1.
         for (TimeTakerCore.FoldRegion r : regions) {
-            assertNotEquals(dStart, r.headingStart);
+            assertNotEquals(text.indexOf("## B"), r.headingStart);
         }
     }
 
     @Test
-    void subtreeFoldRegions_pulaDescendenteSemCorpo() {
-        // "## B" e seguido por "## C" (irmao), portanto nao tem corpo e e pulado.
-        String text = "# A\n## B\n## C\nx\n";
-        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 0);
+    void foldRegionsAtLevel_selecionaApenasNivelInterno() {
+        String text = "# A\nba\n## B\nbb\n## C\nbc\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.foldRegionsAtLevel(text, 2);
         assertEquals(2, regions.size());
-        assertEquals(0, regions.get(0).headingStart);  // # A
-        assertEquals(9, regions.get(1).headingStart);  // ## C
+        assertEquals(text.indexOf("## B"), regions.get(0).headingStart);
+        assertEquals(text.indexOf("## C"), regions.get(1).headingStart);
     }
 
     @Test
-    void subtreeFoldRegions_subtopicoAteFimSemNovaLinha() {
-        String text = "# A\nbody";
-        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 2);
+    void foldRegionsAtLevel_ignoraCabecalhoDoNivelSemCorpo() {
+        // "# A" e seguido imediatamente por "# B" (mesmo nivel): nao tem corpo, e pulado.
+        String text = "# A\n# B\nbody\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.foldRegionsAtLevel(text, 1);
         assertEquals(1, regions.size());
-        assertEquals(0, regions.get(0).headingStart);
-        assertEquals(4, regions.get(0).bodyStart);
-        assertEquals(text.length(), regions.get(0).bodyEnd);
+        assertEquals(text.indexOf("# B"), regions.get(0).headingStart);
+    }
+
+    @Test
+    void foldRegionsAtLevel_ignoraCabecalhoNaUltimaLinhaSemNovaLinha() {
+        String text = "# A\nbody\n# B";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.foldRegionsAtLevel(text, 1);
+        assertEquals(1, regions.size());
+        assertEquals(0, regions.get(0).headingStart); // # B (ultima linha, sem corpo) fica de fora
     }
 
     // ----------------------------------------------------- toggleTaskKeyword
