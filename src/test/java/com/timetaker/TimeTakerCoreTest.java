@@ -1989,4 +1989,166 @@ class TimeTakerCoreTest {
         TimeTakerCore.Settings r = TimeTakerCore.loadSettings(cfg, defaults(tmp.toString()));
         assertTrue(r.indentHeadings);
     }
+
+    // ----------------------------------------------------- allFoldRegions
+
+    @Test
+    void allFoldRegions_textoVazioRetornaListaVazia() {
+        assertTrue(TimeTakerCore.allFoldRegions("").isEmpty());
+    }
+
+    @Test
+    void allFoldRegions_semCabecalhos() {
+        assertTrue(TimeTakerCore.allFoldRegions("apenas\ntexto\n").isEmpty());
+    }
+
+    @Test
+    void allFoldRegions_umaPorCabecalhoComCorpoEmOrdem() {
+        String text = "# A\nbody\n# B\nmore\n## C\nx\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.allFoldRegions(text);
+        assertEquals(3, regions.size());
+        assertEquals(0, regions.get(0).headingStart);
+        assertEquals(4, regions.get(0).bodyStart);
+        assertEquals(9, regions.get(0).bodyEnd);
+        assertEquals(9, regions.get(1).headingStart);
+        assertEquals(13, regions.get(1).bodyStart);
+        assertEquals(text.length(), regions.get(1).bodyEnd);
+        assertEquals(18, regions.get(2).headingStart);
+        assertEquals(23, regions.get(2).bodyStart);
+        assertEquals(text.length(), regions.get(2).bodyEnd);
+    }
+
+    @Test
+    void allFoldRegions_ignoraCabecalhoSemCorpo() {
+        // "# A" e seguido imediatamente por "# B" (irmao), logo nao tem corpo: e ignorado.
+        String text = "# A\n# B\nbody\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.allFoldRegions(text);
+        assertEquals(1, regions.size());
+        assertEquals(4, regions.get(0).headingStart);
+        assertEquals(8, regions.get(0).bodyStart);
+        assertEquals(text.length(), regions.get(0).bodyEnd);
+    }
+
+    @Test
+    void allFoldRegions_ignoraCabecalhoNaUltimaLinhaSemCorpo() {
+        // "# B" e a ultima linha sem '\n': sem corpo, foldRegionFor devolve null e e pulado.
+        String text = "# A\nbody\n# B";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.allFoldRegions(text);
+        assertEquals(1, regions.size());
+        assertEquals(0, regions.get(0).headingStart);
+    }
+
+    // ----------------------------------------------------- subtreeFoldRegions
+
+    @Test
+    void subtreeFoldRegions_caretForaDeCabecalhoRetornaVazio() {
+        String text = "preambulo\n# A\nbody\n";
+        assertTrue(TimeTakerCore.subtreeFoldRegions(text, 0).isEmpty());
+    }
+
+    @Test
+    void subtreeFoldRegions_cabecalhoUltimaLinhaSemCorpoRetornaVazio() {
+        assertTrue(TimeTakerCore.subtreeFoldRegions("# A", 0).isEmpty());
+    }
+
+    @Test
+    void subtreeFoldRegions_incluiCabecalhoEDescendentesAteIrmao() {
+        String text = "# A\nba\n## B\nbb\n### C\nbc\n# D\nbd\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 1);
+        assertEquals(3, regions.size());
+        assertEquals(0, regions.get(0).headingStart);  // # A
+        assertEquals(7, regions.get(1).headingStart);  // ## B
+        assertEquals(15, regions.get(2).headingStart); // ### C
+        // O irmao de mesmo nivel "# D" fica de fora.
+        int dStart = text.indexOf("# D");
+        for (TimeTakerCore.FoldRegion r : regions) {
+            assertNotEquals(dStart, r.headingStart);
+        }
+    }
+
+    @Test
+    void subtreeFoldRegions_pulaDescendenteSemCorpo() {
+        // "## B" e seguido por "## C" (irmao), portanto nao tem corpo e e pulado.
+        String text = "# A\n## B\n## C\nx\n";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 0);
+        assertEquals(2, regions.size());
+        assertEquals(0, regions.get(0).headingStart);  // # A
+        assertEquals(9, regions.get(1).headingStart);  // ## C
+    }
+
+    @Test
+    void subtreeFoldRegions_subtopicoAteFimSemNovaLinha() {
+        String text = "# A\nbody";
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, 2);
+        assertEquals(1, regions.size());
+        assertEquals(0, regions.get(0).headingStart);
+        assertEquals(4, regions.get(0).bodyStart);
+        assertEquals(text.length(), regions.get(0).bodyEnd);
+    }
+
+    // ----------------------------------------------------- toggleTaskKeyword
+
+    @Test
+    void toggleTaskKeyword_textoNuloRetornaNull() {
+        assertNull(TimeTakerCore.toggleTaskKeyword(null, 0));
+    }
+
+    @Test
+    void toggleTaskKeyword_textoVazioRetornaNull() {
+        assertNull(TimeTakerCore.toggleTaskKeyword("", 0));
+    }
+
+    @Test
+    void toggleTaskKeyword_todoViraDone() {
+        String text = "# TODO Tarefa\ncorpo\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.toggleTaskKeyword(text, 0);
+        assertNotNull(e);
+        assertEquals("# DONE Tarefa\ncorpo\n", e.text);
+        assertEquals(6, e.caret);
+    }
+
+    @Test
+    void toggleTaskKeyword_doneViraTodo() {
+        String text = "## DONE Item";
+        TimeTakerCore.TextEdit e = TimeTakerCore.toggleTaskKeyword(text, 5);
+        assertNotNull(e);
+        assertEquals("## TODO Item", e.text);
+        assertEquals(7, e.caret);
+    }
+
+    @Test
+    void toggleTaskKeyword_caretEmQualquerPontoDaLinha() {
+        String text = "# TODO Tarefa\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.toggleTaskKeyword(text, 9); // sobre "Tarefa"
+        assertNotNull(e);
+        assertEquals("# DONE Tarefa\n", e.text);
+    }
+
+    @Test
+    void toggleTaskKeyword_comNumeroDeEnumeracaoAntesDoTodo() {
+        String text = "# 1.2 TODO Sub\n";
+        TimeTakerCore.TextEdit e = TimeTakerCore.toggleTaskKeyword(text, 0);
+        assertNotNull(e);
+        assertEquals("# 1.2 DONE Sub\n", e.text);
+        assertEquals(10, e.caret);
+    }
+
+    @Test
+    void toggleTaskKeyword_tokenNoFimDaLinha() {
+        // Palavra-chave e o unico/ultimo token do titulo (sem espaco depois).
+        TimeTakerCore.TextEdit e = TimeTakerCore.toggleTaskKeyword("# TODO", 0);
+        assertNotNull(e);
+        assertEquals("# DONE", e.text);
+    }
+
+    @Test
+    void toggleTaskKeyword_cabecalhoSemPalavraChaveRetornaNull() {
+        assertNull(TimeTakerCore.toggleTaskKeyword("# Comum\n", 0));
+    }
+
+    @Test
+    void toggleTaskKeyword_caretEmLinhaDeCorpoRetornaNull() {
+        String text = "# TODO Tarefa\ncorpo\n";
+        assertNull(TimeTakerCore.toggleTaskKeyword(text, 15)); // dentro de "corpo"
+    }
 }

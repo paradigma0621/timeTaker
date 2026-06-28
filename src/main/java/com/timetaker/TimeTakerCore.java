@@ -503,30 +503,10 @@ public final class TimeTakerCore {
         while (true) {
             int nl = text.indexOf('\n', lineStart);
             int lineEnd = nl < 0 ? len : nl;
-            String line = text.substring(lineStart, lineEnd);
-            Matcher m = HEADING.matcher(line);
-            if (m.matches()) {
-                int titleStart = m.start(2); // inicio do titulo (primeiro nao-espaco apos o marcador)
-                // Ignora um numero de enumeracao inicial ("1.2 ") para que TODO/DONE logo apos o
-                // numero continuem sendo coloridos (interacao com a auto-enumeracao do Ctrl+E).
-                Matcher num = LEADING_NUMBER.matcher(line.substring(titleStart));
-                if (num.matches()) {
-                    titleStart += num.start(2);
-                }
-                int tokenEnd = titleStart;
-                while (tokenEnd < line.length() && !Character.isWhitespace(line.charAt(tokenEnd))) {
-                    tokenEnd++;
-                }
-                String token = line.substring(titleStart, tokenEnd);
-                Keyword kind = null;
-                if (token.equals("TODO")) {
-                    kind = Keyword.TODO;
-                } else if (token.equals("DONE")) {
-                    kind = Keyword.DONE;
-                }
-                if (kind != null) {
-                    spans.add(new KeywordSpan(lineStart + titleStart, token.length(), kind));
-                }
+            KeywordSpan span = headingKeyword(text.substring(lineStart, lineEnd));
+            if (span != null) {
+                // headingKeyword devolve o offset RELATIVO a linha; converte para absoluto.
+                spans.add(new KeywordSpan(lineStart + span.start, span.length, span.kind));
             }
             if (nl < 0) {
                 break;
@@ -534,6 +514,64 @@ public final class TimeTakerCore {
             lineStart = nl + 1;
         }
         return spans;
+    }
+
+    /**
+     * Se {@code line} for um cabecalho cujo PRIMEIRO token do titulo (apos o marcador "#"/"*" e
+     * um numero de enumeracao inicial opcional, ex.: "1.2 ") for exatamente TODO ou DONE, devolve
+     * um {@link KeywordSpan} com {@code start} RELATIVO ao inicio da linha; caso contrario, null.
+     * Logica unica reusada por {@link #keywordSpans} (coloracao) e {@link #toggleTaskKeyword}.
+     */
+    private static KeywordSpan headingKeyword(String line) {
+        Matcher m = HEADING.matcher(line);
+        if (!m.matches()) {
+            return null;
+        }
+        int titleStart = m.start(2); // inicio do titulo (primeiro nao-espaco apos o marcador)
+        // Ignora um numero de enumeracao inicial ("1.2 ") para que TODO/DONE logo apos o
+        // numero continuem valendo (interacao com a auto-enumeracao do Ctrl+E).
+        Matcher num = LEADING_NUMBER.matcher(line.substring(titleStart));
+        if (num.matches()) {
+            titleStart += num.start(2);
+        }
+        int tokenEnd = titleStart;
+        while (tokenEnd < line.length() && !Character.isWhitespace(line.charAt(tokenEnd))) {
+            tokenEnd++;
+        }
+        String token = line.substring(titleStart, tokenEnd);
+        if (token.equals("TODO")) {
+            return new KeywordSpan(titleStart, token.length(), Keyword.TODO);
+        }
+        if (token.equals("DONE")) {
+            return new KeywordSpan(titleStart, token.length(), Keyword.DONE);
+        }
+        return null;
+    }
+
+    /**
+     * Alterna a palavra-chave de tarefa do cabecalho na linha do caret: se o caret estiver em
+     * qualquer ponto de uma linha de cabecalho cujo primeiro token do titulo (apos o marcador e um
+     * numero de enumeracao opcional, conforme {@link #keywordSpans}) for TODO ou DONE, devolve um
+     * {@link TextEdit} com o token trocado pelo outro (TODO<->DONE) e o caret logo apos o token
+     * reescrito; caso contrario, devolve {@code null} (no-op). Funcao pura.
+     */
+    public static TextEdit toggleTaskKeyword(String text, int caret) {
+        if (text == null) {
+            return null;
+        }
+        caret = Math.max(0, Math.min(caret, text.length()));
+        int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
+        int nl = text.indexOf('\n', lineStart);
+        int lineEnd = nl < 0 ? text.length() : nl;
+        KeywordSpan span = headingKeyword(text.substring(lineStart, lineEnd));
+        if (span == null) {
+            return null;
+        }
+        String replacement = span.kind == Keyword.TODO ? Keyword.DONE.name() : Keyword.TODO.name();
+        int start = lineStart + span.start;
+        int end = start + span.length;
+        String updated = text.substring(0, start) + replacement + text.substring(end);
+        return new TextEdit(updated, start + replacement.length());
     }
 
     // ----------------------------------------------------- Coloracao de titulos por nivel
@@ -858,6 +896,70 @@ public final class TimeTakerCore {
             lineStart = nl + 1;
         }
         return len;
+    }
+
+    /**
+     * Todas as regioes dobraveis do documento, em ordem: uma {@link FoldRegion} para cada
+     * cabecalho que tenha corpo dobravel. Cabecalhos sem corpo (ou na ultima linha, sem '\n')
+     * sao ignorados, pois {@link #foldRegionFor} devolve null para eles. Usado pelo "colapsar
+     * todos os topicos". Funcao pura.
+     */
+    public static List<FoldRegion> allFoldRegions(String text) {
+        List<FoldRegion> regions = new ArrayList<>();
+        int len = text.length();
+        int lineStart = 0;
+        while (true) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? len : nl;
+            if (isHeading(text.substring(lineStart, lineEnd))) {
+                FoldRegion region = foldRegionFor(text, lineStart);
+                if (region != null) {
+                    regions.add(region);
+                }
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return regions;
+    }
+
+    /**
+     * Regioes dobraveis do topico sob o caret e de TODOS os seus descendentes: uma
+     * {@link FoldRegion} para o cabecalho sob o caret (se tiver corpo) e para cada cabecalho mais
+     * profundo dentro do seu subtopico que tenha corpo dobravel, em ordem. Lista vazia se o caret
+     * nao estiver sob cabecalho algum ou se o cabecalho for a ultima linha (sem corpo). Usado pelo
+     * "colapsar o topico atual e seus subtopicos". Funcao pura.
+     */
+    public static List<FoldRegion> subtreeFoldRegions(String text, int caret) {
+        List<FoldRegion> regions = new ArrayList<>();
+        int headingStart = headingLineStartFor(text, caret);
+        if (headingStart < 0) {
+            return regions;
+        }
+        int headingEnd = text.indexOf('\n', headingStart);
+        if (headingEnd < 0) {
+            return regions; // cabecalho na ultima linha: sem corpo e sem descendentes
+        }
+        int level = headingLevel(text.substring(headingStart, headingEnd));
+        int end = subtreeEnd(text, headingEnd + 1, level);
+        int lineStart = headingStart;
+        while (lineStart < end) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? text.length() : nl;
+            if (isHeading(text.substring(lineStart, lineEnd))) {
+                FoldRegion region = foldRegionFor(text, lineStart);
+                if (region != null) {
+                    regions.add(region);
+                }
+            }
+            if (nl < 0) {
+                break;
+            }
+            lineStart = nl + 1;
+        }
+        return regions;
     }
 
     /**

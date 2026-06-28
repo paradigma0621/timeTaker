@@ -264,6 +264,16 @@ public class TimeTakerApp extends JFrame {
         editMenu.add(makeItem("Configuracoes", KeyEvent.VK_C,
                 KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, menuMask), e -> showSettings()));
 
+        // --- Visualizar ---
+        JMenu viewMenu = new JMenu("Visualizar");
+        viewMenu.setMnemonic(KeyEvent.VK_V);
+        viewMenu.add(makeItem("Colapsar todos os topicos", KeyEvent.VK_C,
+                KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                e -> collapseAllTopics()));
+        viewMenu.add(makeItem("Expandir todos os topicos", KeyEvent.VK_E,
+                KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                e -> expandAllTopics()));
+
         // --- Ajuda ---
         JMenu helpMenu = new JMenu("Ajuda");
         helpMenu.setMnemonic(KeyEvent.VK_J);
@@ -272,6 +282,7 @@ public class TimeTakerApp extends JFrame {
 
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
+        menuBar.add(viewMenu);
         menuBar.add(helpMenu);
 
         // Atalhos globais de registro de tempo:
@@ -316,6 +327,22 @@ public class TimeTakerApp extends JFrame {
         // SHIFT+TAB -> alterna recolher/expandir o topico sob o cursor (folding estilo Org).
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_TAB, InputEvent.SHIFT_DOWN_MASK),
                 "toggleFold", this::toggleFold);
+
+        // CTRL+SHIFT+C / CTRL+SHIFT+E -> colapsa / expande TODOS os topicos do documento.
+        registerGlobalShortcut(
+                KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                "collapseAll", this::collapseAllTopics);
+        registerGlobalShortcut(
+                KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask | InputEvent.SHIFT_DOWN_MASK),
+                "expandAll", this::expandAllTopics);
+
+        // CTRL+ALT+C / CTRL+ALT+E -> colapsa / expande o topico atual e seus subtopicos.
+        registerGlobalShortcut(
+                KeyStroke.getKeyStroke(KeyEvent.VK_C, menuMask | InputEvent.ALT_DOWN_MASK),
+                "collapseSubtree", this::collapseSubtree);
+        registerGlobalShortcut(
+                KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask | InputEvent.ALT_DOWN_MASK),
+                "expandSubtree", this::expandSubtree);
 
         // CTRL+E -> (re)numera hierarquicamente os topicos (cabecalhos).
         registerGlobalShortcut(KeyStroke.getKeyStroke(KeyEvent.VK_E, menuMask),
@@ -893,6 +920,10 @@ public class TimeTakerApp extends JFrame {
         if (edit == null) {
             edit = TimeTakerCore.adjustTimeField(text, caret, delta);
         }
+        // Sem data nem horario sob o cursor: se for um cabecalho TODO/DONE, alterna a palavra-chave.
+        if (edit == null) {
+            edit = TimeTakerCore.toggleTaskKeyword(text, caret);
+        }
         if (edit != null) {
             applyEdit(edit.text, edit.caret);
         }
@@ -1027,6 +1058,80 @@ public class TimeTakerApp extends JFrame {
         }
         textArea.revalidate();
         textArea.repaint();
+    }
+
+    /**
+     * Ctrl+Shift+C / menu "Colapsar todos os topicos": dobra todos os topicos com corpo do
+     * documento (em ordem) e leva o cursor ao inicio para nao ficar preso em linha oculta.
+     */
+    private void collapseAllTopics() {
+        StyledDocument doc = textArea.getStyledDocument();
+        for (TimeTakerCore.FoldRegion region : TimeTakerCore.allFoldRegions(textArea.getText())) {
+            applyFold(doc, region, true);
+        }
+        textArea.setCaretPosition(0);
+        textArea.revalidate();
+        textArea.repaint();
+    }
+
+    /**
+     * Ctrl+Shift+E / menu "Expandir todos os topicos": limpa os atributos de dobra de TODOS os
+     * paragrafos do documento, revelando tudo. O undo e suspenso (mutacao puramente visual).
+     */
+    private void expandAllTopics() {
+        StyledDocument doc = textArea.getStyledDocument();
+        clearFold(doc, 0, doc.getLength());
+        textArea.revalidate();
+        textArea.repaint();
+    }
+
+    /**
+     * Ctrl+Alt+C: dobra o topico sob o cursor e todos os seus subtopicos; leva o cursor ao
+     * inicio do cabecalho atual. No-op se o cursor nao estiver sob cabecalho com corpo.
+     */
+    private void collapseSubtree() {
+        String text = textArea.getText();
+        int caret = textArea.getCaretPosition();
+        List<TimeTakerCore.FoldRegion> regions = TimeTakerCore.subtreeFoldRegions(text, caret);
+        if (regions.isEmpty()) {
+            return;
+        }
+        StyledDocument doc = textArea.getStyledDocument();
+        for (TimeTakerCore.FoldRegion region : regions) {
+            applyFold(doc, region, true);
+        }
+        textArea.setCaretPosition(regions.get(0).headingStart);
+        textArea.revalidate();
+        textArea.repaint();
+    }
+
+    /**
+     * Ctrl+Alt+E: expande o topico sob o cursor e todos os seus subtopicos, limpando os atributos
+     * de dobra do cabecalho ate o fim do seu corpo. No-op se o cursor nao estiver sob cabecalho.
+     */
+    private void expandSubtree() {
+        TimeTakerCore.FoldRegion region =
+                TimeTakerCore.foldRegionFor(textArea.getText(), textArea.getCaretPosition());
+        if (region == null) {
+            return;
+        }
+        StyledDocument doc = textArea.getStyledDocument();
+        clearFold(doc, region.headingStart, region.bodyEnd);
+        textArea.revalidate();
+        textArea.repaint();
+    }
+
+    /** Limpa (define como false) os atributos de dobra dos paragrafos no intervalo informado. */
+    private void clearFold(StyledDocument doc, int start, int end) {
+        undoController.suspend();
+        try {
+            SimpleAttributeSet attr = new SimpleAttributeSet();
+            attr.addAttribute(FOLD_BODY_KEY, Boolean.FALSE);
+            attr.addAttribute(FOLD_HEAD_KEY, Boolean.FALSE);
+            doc.setParagraphAttributes(start, Math.max(0, end - start), attr, false);
+        } finally {
+            undoController.resume();
+        }
     }
 
     /**
@@ -1471,13 +1576,18 @@ public class TimeTakerApp extends JFrame {
                         + "                 (ou no final do arquivo, sem projeto)\n"
                         + "  Ctrl+O         Saida: fecha o CLOCK em aberto com horario e duracao\n"
                         + "  Ctrl+Up/Down   Ajusta o campo sob o cursor: ano/mes/dia da data\n"
-                        + "                 yyyy-MM-dd ddd ou a hora/minuto do HH:mm\n"
+                        + "                 yyyy-MM-dd ddd ou a hora/minuto do HH:mm; num\n"
+                        + "                 cabecalho TODO/DONE, alterna entre TODO e DONE\n"
                         + "  Ctrl+R         Recalcula as duracoes de todos os registros\n"
                         + "  Ctrl+T         Relatorio de tempo por projeto\n"
                         + "  Ctrl+Shift+T   Insere o relatorio (indentado) no cursor\n"
                         + "  Ctrl+Shift+Alt+C  Registra pausa de cafe na secao \"# Coffee\"\n"
                         + "                 (agrupada por dia, no fim do documento)\n"
                         + "  Shift+Tab      Encolhe/expande o topico sob o cursor (folding)\n"
+                        + "  Ctrl+Shift+C   Colapsa todos os topicos do documento\n"
+                        + "  Ctrl+Shift+E   Expande todos os topicos do documento\n"
+                        + "  Ctrl+Alt+C     Colapsa o topico atual e seus subtopicos\n"
+                        + "  Ctrl+Alt+E     Expande o topico atual e seus subtopicos\n"
                         + "  Ctrl+E         Alterna: numera os topicos (1, 1.1, ...) ou remove a numeracao\n"
                         + "  Ctrl + / Ctrl -   Aumenta/diminui o tamanho da fonte\n"
                         + "  Ctrl+Z         Desfazer\n"
